@@ -1,0 +1,16 @@
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_1000_gamma_0.6'  --results_dir='results/real_data_results3' --data_filename='data/real_data_norm_sample1000.txt'
+
+if networks_to_train == "propensity_networks":
+        logging.info("Training propensity networks")
+        net_names = ['treatment_rnn_action_inputs_only', 'treatment_rnn']
+
+    elif networks_to_train == "encoder":
+        logging.info("Training R-MSN encoder")
+        net_names = ["rnn_propensity_weighted"]
+
+    elif networks_to_train == "user_defined":
+        logging.info("Training user defined network")
+        raise NotImplementedError("Specify network to use!")
+
+    else:
+        raise ValueError("Unrecognised network type")
