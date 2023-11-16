@@ -107,9 +107,9 @@ class RnnModel:
         self.experiment_name = params['experiment_name']
 
         # Data params
-        self.training_data = params['training_dataset']
-        self.validation_data = params['validation_dataset']
-        self.test_data = params['test_dataset']
+        self.training_data = None if 'training_dataset' not in params else params['training_dataset']
+        self.validation_data = None if 'validation_dataset' not in params else params['validation_dataset']
+        self.test_data = None if 'test_dataset' not in params else params['test_dataset']
         self.input_size = params['input_size']
         self.output_size = params['output_size']
 

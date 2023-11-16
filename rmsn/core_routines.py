@@ -334,6 +334,12 @@ def test(training_dataset,
 
             # Get the right model
             model = RnnModel(model_parameters)
+            # rango changed 23.10.24#####################################################################################
+            # handles = model.get_prediction_graph(use_validation_set=False,
+            #                                      with_dropout=False,
+            #                                      b_use_state_initialisation=b_use_state_initialisation,
+            #                                      b_dump_all_states=b_dump_all_states)
+            # ############################################################################################################
             handles = model.get_prediction_graph(use_validation_set=False if 'treatment_rnn' not in net_name  else None,
                                                  with_dropout=False,
                                                  b_use_state_initialisation=b_use_state_initialisation,
@@ -379,7 +385,11 @@ def test(training_dataset,
                   + training_dataset['output_means']
             """
             states = np.concatenate(states, axis=0)
-
+            
+            # rango changed 23.10.24###########################
+            # active_entries = test_dataset['active_entries']
+            # output = test_dataset['outputs'] 
+            # #################################################
             active_entries = test_dataset['active_entries'] \
                 if net_name != 'treatment_rnn' else training_dataset['active_entries']
             output = test_dataset['outputs'] \
@@ -402,9 +412,7 @@ def test(training_dataset,
 #--------------------------------------------------------------------------
 # Predict routine
 #--------------------------------------------------------------------------
-def predict(training_dataset,
-         validation_dataset,
-         test_dataset,
+def predict(dataset,
          tf_config,
          net_name,
          expt_name,
@@ -436,9 +444,7 @@ def predict(training_dataset,
     tf.reset_default_graph()
 
     with tf.Session(config=tf_config) as sess:
-        tf_data_train = convert_to_tf_dataset(training_dataset)
-        tf_data_valid = convert_to_tf_dataset(validation_dataset)
-        tf_data_test = convert_to_tf_dataset(test_dataset)
+        tf_dataset = convert_to_tf_dataset(dataset)
 
         # For decoder training with external state inputs
         if b_use_state_initialisation:
@@ -453,9 +459,7 @@ def predict(training_dataset,
         # Training simulation
         model_parameters = {'net_name': net_name,
                             'experiment_name': expt_name,
-                            'training_dataset': tf_data_train,
-                            'validation_dataset': tf_data_valid,
-                            'test_dataset': tf_data_test,
+                            'test_dataset': tf_dataset,
                             'dropout_rate': dropout_rate,
                             'input_size': num_features,
                             'output_size': num_outputs,
@@ -516,19 +520,16 @@ def predict(training_dataset,
                 except tf.errors.OutOfRangeError:
                     break
 
+            # means = np.concatenate(means, axis=0)
 
-            means = np.concatenate(means, axis=0)
-
-            """
-            means = np.concatenate(means, axis=0) * training_dataset['output_stds']\
-                    + training_dataset['output_means']
-            UBs = np.concatenate(UBs, axis=0) * training_dataset['output_stds'] \
-                  + training_dataset['output_means']
-            LBs = np.concatenate(LBs, axis=0) * training_dataset['output_stds'] \
-                  + training_dataset['output_means']
-            """
-            UBs = np.concatenate(UBs, axis=0)
-            LBs = np.concatenate(LBs, axis=0)
+            means = np.concatenate(means, axis=0) * dataset['output_stds']\
+                    + dataset['output_means']
+            UBs = np.concatenate(UBs, axis=0) * dataset['output_stds'] \
+                  + dataset['output_means']
+            LBs = np.concatenate(LBs, axis=0) * dataset['output_stds'] \
+                  + dataset['output_means']
+            # UBs = np.concatenate(UBs, axis=0)
+            # LBs = np.concatenate(LBs, axis=0)
             states = np.concatenate(states, axis=0)
             # results[net_name] = mse
             # print(net_name, mse)
@@ -563,7 +564,8 @@ def get_processed_data(raw_sim_data,
                        b_use_actions_only,
                        b_use_predicted_confounders,
                        b_use_oracle_confounders,
-                       b_remove_x1):
+                       b_remove_x1,
+                       keep_first_point=False):
     """
     Create formatted data to train both propensity networks and seq2seq architecture
 
@@ -618,7 +620,9 @@ def get_processed_data(raw_sim_data,
             inputs = np.concatenate([covariates, predicted_confounders, treatments], axis=2)
         else:
             inputs = np.concatenate([covariates, treatments], axis=2)
-        inputs = inputs[:, 1:, :]
+        
+        if not keep_first_point:
+            inputs = inputs[:, 1:, :]
 
         actions = inputs[:, :, -num_treatments:].copy()
 
@@ -629,7 +633,10 @@ def get_processed_data(raw_sim_data,
         outputs = outputs[:, 1:, :]
 
     else:
-        outputs = dataset_outputs[:, 1:, :]
+        if keep_first_point:
+            outputs = dataset_outputs
+        else:
+            outputs = dataset_outputs[:, 1:, :]
 
 
     # Set array alignment

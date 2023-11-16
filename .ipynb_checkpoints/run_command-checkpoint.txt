@@ -1,16 +1,26 @@
-python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_10000_gamma_0.6_v2'  --results_dir='results/real_data_results3' --data_filename='data/real_data_norm4.txt'
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_10000_gamma_0.6'  --results_dir='results/real_data_results3' --data_filename='data/real_data_sample10000.txt' --num_substitute_hidden_confounders=3
 
-if networks_to_train == "propensity_networks":
-        logging.info("Training propensity networks")
-        net_names = ['treatment_rnn_action_inputs_only', 'treatment_rnn']
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_10000_gamma_0.6'  --results_dir='results/real_data_results3' --data_filename='results/real_data_results3/sample_10000_gamma_0.6_dataset_with_substitute_confounders.txt' --num_substitute_hidden_confounders=1
 
-    elif networks_to_train == "encoder":
-        logging.info("Training R-MSN encoder")
-        net_names = ["rnn_propensity_weighted"]
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_10000_discrete_control_gamma_0.6'  --results_dir='results/real_data_results3' --data_filename='data/sample10000_discrete_control.txt' --num_substitute_hidden_confounders=1
 
-    elif networks_to_train == "user_defined":
-        logging.info("Training user defined network")
-        raise NotImplementedError("Specify network to use!")
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_10000_discrete_control_gamma_0.6'  --results_dir='results/real_data_results3' --data_filename='results/real_data_results3/sample_10000_discrete_control_gamma_0.6_dataset_with_substitute_confounders.txt' --num_substitute_hidden_confounders=1
 
-    else:
-        raise ValueError("Unrecognised network type")
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_10000_discrete_control_gamma_0.6'  --results_dir='results/real_data_results3' --data_filename='data/sample5000_for_predict.txt' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_10000_logdiscrete_control_gamma_0.6'  --results_dir='results/real_data_results3' --data_filename='data/sample10000_logdiscrete_control.txt' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_10000_logdiscrete_control_gamma_0.6'  --results_dir='results/real_data_results3' --data_filename='data/sample5000_for_predict_logdiscrete.txt' --num_substitute_hidden_confounders=1
+
+-- test ALE plot（使用log离散化的从众数据，使用已填充predicted_confounders的数据）
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_10000_logdiscrete_control_gamma_0.6'  --results_dir='results/real_data_results3' --data_filename='results/real_data_results3/sample_10000_logdiscrete_control_gamma_0.6_dataset_with_substitute_confounders.txt' --num_substitute_hidden_confounders=1
+
+-- 使用log变换但不离散化的conformity训练模型
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_10000_log_gamma_0.6'  --results_dir='results/real_data_results3' --data_filename='data/sample10000_log.txt' --num_substitute_hidden_confounders=1
+
+-- 使用log变换的额外5000个样本做预测并绘制ale
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_10000_log_gamma_0.6'  --results_dir='results/real_data_results3' --data_filename='data/sample5000_log_for_predict.txt' --num_substitute_hidden_confounders=1
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_10000_log_gamma_0.6'  --results_dir='results/real_data_results3' --data_filename='results/real_data_results3/sample_10000_log_gamma_0.6_dataset_with_substitute_confounders_for_predict.txt' --num_substitute_hidden_confounders=1
+
+分箱：
+0.0 1173.652 2942.316 5842.279 10852.704 36933.88

@@ -34,9 +34,7 @@ logging.getLogger().setLevel(logging.INFO)
 # Default params:
 expt_name = "treatment_effects"
 
-
-
-def rnn_predict(dataset_map, MODEL_ROOT, b_use_predicted_confounders, b_use_oracle_confounders=False,
+def rnn_predict(dataset, MODEL_ROOT, b_use_predicted_confounders, b_use_oracle_confounders=False,
              b_remove_x1=False):
     logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
@@ -70,10 +68,6 @@ def rnn_predict(dataset_map, MODEL_ROOT, b_use_predicted_confounders, b_use_orac
 
         projection_map[net_name] = {}
 
-        training_data = dataset_map['training_data']
-        validation_data = dataset_map['validation_data']
-        test_data = dataset_map['test_data']
-
         # scaling_data = pickle_map['scaling_data']  # use scaling data from above
 
         # Setup some params
@@ -83,18 +77,14 @@ def rnn_predict(dataset_map, MODEL_ROOT, b_use_predicted_confounders, b_use_orac
 
         # In[*]: Compute base MSEs
         # Extract only relevant trajs and shift data
-        training_processed = core.get_processed_data(training_data, b_predict_actions,
-                                                     b_use_actions_only,
-                                                     b_use_predicted_confounders, b_use_oracle_confounders, b_remove_x1)
-        validation_processed = core.get_processed_data(validation_data, b_predict_actions,
-                                                       b_use_actions_only, b_use_predicted_confounders,
-                                                       b_use_oracle_confounders, b_remove_x1)
-        test_processed = core.get_processed_data(test_data, b_predict_actions,
-                                                 b_use_actions_only, b_use_predicted_confounders,
-                                                 b_use_oracle_confounders, b_remove_x1)
+        keep_first_point = True
+        dataset_processed = core.get_processed_data(dataset, b_predict_actions, b_use_actions_only, b_use_predicted_confounders, 
+                                                    b_use_oracle_confounders, b_remove_x1, keep_first_point)
+        dataset_processed['output_means'] = dataset['output_means']
+        dataset_processed['output_stds'] = dataset['output_stds']
 
-        num_features = training_processed['scaled_inputs'].shape[-1]  # 4 if not b_use_actions_only else 3
-        num_outputs = training_processed['scaled_outputs'].shape[-1]  # 1 if not b_predict_actions else 3  # 5
+        num_features = dataset_processed['scaled_inputs'].shape[-1]  # 4 if not b_use_actions_only else 3
+        num_outputs = dataset_processed['scaled_outputs'].shape[-1]  # 1 if not b_predict_actions else 3  # 5
 
         # Pull remaining params
         dropout_rate = config[1]
@@ -111,10 +101,15 @@ def rnn_predict(dataset_map, MODEL_ROOT, b_use_predicted_confounders, b_use_orac
         model_folder = os.path.join(MODEL_ROOT, net_name)
 
         means, ub, lb, test_states \
-            = predict(training_processed, validation_processed, test_processed, tf_config,
+            = predict(dataset_processed, tf_config,
                    net_name, expt_name, dropout_rate, num_features, num_outputs,
                    memory_multiplier, num_epochs, minibatch_size, learning_rate, max_norm,
                    hidden_activation, output_activation, model_folder,
                    b_use_state_initialisation=False, b_dump_all_states=True)
+        
+        # Attach conformity class
+        labels = dataset['treatments'][:,:,0:5]
+        #observations = dataset['outcomes']*dataset['output_stds']+dataset['output_means']
+        observations = dataset_processed['outputs']
 
-    return means, ub, lb, test_states, test_processed['outputs']
+    return means, ub, lb, labels, observations
