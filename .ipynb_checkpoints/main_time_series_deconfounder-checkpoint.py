@@ -51,7 +51,7 @@ if __name__ == '__main__':
     logging.info("Dataset loaded")
 
     if "predict" in args.data_filename:
-        dataset_with_confounders_filename = '{}/{}_dataset_with_substitute_confounders_for_predict.txt'.format(args.results_dir,
+        dataset_with_confounders_filename = '{}/{}_dataset_with_substitute_confounders_for_predict_v3.txt'.format(args.results_dir,
                                                                                                args.exp_name)
     else:
         dataset_with_confounders_filename = '{}/{}_dataset_with_substitute_confounders.txt'.format(args.results_dir,
@@ -60,7 +60,7 @@ if __name__ == '__main__':
     # logging.info("Dataset saved")
     
     factor_model_hyperparams_file = '{}/{}_factor_model_best_hyperparams.txt'.format(args.results_dir, args.exp_name)
-    model_prediction_file = '{}/{}_prediction_log.txt'.format(args.results_dir, args.exp_name)
+    model_prediction_file = '{}/{}_prediction.txt'.format(args.results_dir, args.exp_name)
 
     test_time_series_deconfounder(dataset=dataset, num_substitute_confounders=args.num_substitute_hidden_confounders,
                                   exp_name=args.exp_name,
