@@ -6,6 +6,7 @@ from itertools import product
 from operator import add
 
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import numpy as np
 import pandas as pd
 import scipy
@@ -227,7 +228,7 @@ def _first_order_quant_plot(ax, quantiles, ale, **kwargs):
 
 
 def _second_order_quant_plot(
-    fig, ax, quantiles_list, ale, mark_empty=True, n_interp=50, **kwargs
+    fig, ax, quantiles_list, ale, mark_empty=True, n_interp=50, compute_time_vary=False, **kwargs
 ):
     """Second order ALE plot.
 
@@ -258,14 +259,32 @@ def _second_order_quant_plot(
         If more than 2 values were given for `n_interp`.
 
     """
-    centres_list = [_get_centres(quantiles) for quantiles in quantiles_list]
-    n_x, n_y = _check_two_ints(n_interp)
-    x = np.linspace(centres_list[0][0], centres_list[0][-1], n_x)
-    y = np.linspace(centres_list[1][0], centres_list[1][-1], n_y)
+    if compute_time_vary:
+        print("plotting heatmap...")
+        # define colormap - let value 0 equals white
+        min_val = np.min(ale)
+        max_val = np.max(ale)
+        midpoint = abs(min_val) / (abs(max_val) + abs(min_val))
+        colors = [(0, "blue"), (midpoint, "white"), (1, "red")]
+        linear_cmap = mcolors.LinearSegmentedColormap.from_list("my_cmap", colors)
+        
+        HM = ax.imshow(ale.T, aspect='auto', cmap=linear_cmap, origin='lower', vmin=min_val, vmax=max_val, **kwargs)
+#         # Create a meshgrid for plotting
+#         X, Y = np.meshgrid(quantiles_list[0], quantiles_list[1], indexing="ij")
+    
+#         # Plotting the heatmap
+#         HM = ax.pcolormesh(X, Y, ale, cmap="bwr", shading='auto', **kwargs)
+        
+    else:
+        centres_list = [_get_centres(quantiles) for quantiles in quantiles_list]
+        print("plotting contour...")
+        n_x, n_y = _check_two_ints(n_interp)
+        x = np.linspace(centres_list[0][0], centres_list[0][-1], n_x)
+        y = np.linspace(centres_list[1][0], centres_list[1][-1], n_y)
 
-    X, Y = np.meshgrid(x, y, indexing="xy")
-    ale_interp = scipy.interpolate.interp2d(centres_list[0], centres_list[1], ale.T)
-    CF = ax.contourf(X, Y, ale_interp(x, y), cmap="bwr", levels=30, alpha=0.7, **kwargs)
+        X, Y = np.meshgrid(x, y, indexing="xy")
+        ale_interp = scipy.interpolate.interp2d(centres_list[0], centres_list[1], ale.T)
+        CF = ax.contourf(X, Y, ale_interp(x, y), cmap="bwr", levels=30, alpha=0.7, **kwargs)
 
     if mark_empty and np.any(ale.mask):
         # Do not autoscale, so that boxes at the edges (contourf only plots the bin
@@ -284,7 +303,11 @@ def _second_order_quant_plot(
                     alpha=0.4,
                 )
             )
-    fig.colorbar(CF)
+    
+    if compute_time_vary:
+        fig.colorbar(HM)
+    else:
+        fig.colorbar(CF)
 
 
 def _get_quantiles(train_set, feature, bins):
@@ -375,9 +398,6 @@ def _first_order_ale_quant(predictor, train_set, feature, bins):
         predictions.append(predictor(mod_train_set))
     # The individual effects.
     effects = predictions[1] - predictions[0]
-    
-    print(f"length of indices: {len(indices)}")
-    print(f"length of effects: {len(effects)}")
 
     # Average these differences within each bin.
     index_groupby = pd.DataFrame({"index": indices, "effects": effects}).groupby(
@@ -398,7 +418,7 @@ def _first_order_ale_quant(predictor, train_set, feature, bins):
     return ale, quantiles
 
 
-def _second_order_ale_quant(predictor, train_set, features, bins):
+def _second_order_ale_quant(predictor, train_set, features, bins, compute_time_vary=False):
     """Estimate the second-order ALE function for two continuous feature data.
 
     Parameters
@@ -439,42 +459,163 @@ def _second_order_ale_quant(predictor, train_set, features, bins):
                 n_feat=len(features)
             )
         )
+    # if compute time-varying ALE, use first order quant, divide into 2 conditions: week or sliding windows
+    if compute_time_vary:
+        if "week" in features:
+            # extract a part of code from _first_order_ale_quant and modify##########################
+            feature = [feature for feature in features if feature != "week"][0]
+            # feature = 'conformity'
+            quantiles, real_bins = _get_quantiles(train_set, feature, bins)
+            # adjust week to match index
+            #adjusted_weeks_list = [week - 1 for week in sorted(train_set['week'].unique())]
+            quantiles_list = tuple(np.append(sorted(train_set['week'].unique()), max(train_set['week'])+1) if f=='week' else quantiles for f in features)
+            bins_list = tuple(len(train_set['week'].unique()) if f=='week' else real_bins for f in features)
+            logger.debug("Quantiles: {}.", quantiles)
 
-    quantiles_list, bins_list = tuple(
-        zip(
-            *(
-                _get_quantiles(train_set, feature, n_bin)
-                for feature, n_bin in zip(features, _check_two_ints(bins))
+            predictions = [np.zeros_like(train_set[feature]), np.zeros_like(train_set[feature])]
+            # predictions = np.array([np.zeros_like(train_set[feature]) for _ in range(len(quantiles))])
+
+            # 遍历每个 week替换特征值
+            for week in sorted(train_set['week'].unique()):
+                # 筛选出对应 week 的数据行
+                week_indices = train_set['week'] == week
+                feature_indices = np.clip(
+                    np.digitize(train_set[week_indices][feature], quantiles, right=True) - 1, 0, None
+                    )
+
+                # 对于每个 offset
+                for offset in range(2):
+                    # 复制整个训练集
+                    mod_train_set = train_set.copy()
+
+                    # 只更新当前 week 的特定特征值
+                    mod_train_set.loc[week_indices, feature] = quantiles[feature_indices + offset]
+
+                    # 对整个训练集进行预测并记录
+                    predictions[offset][week_indices] = predictor(mod_train_set)[week_indices]
+
+            effects = predictions[1] - predictions[0]
+
+            indices = np.clip(
+                np.digitize(train_set[feature], quantiles, right=True) - 1, 0, None
+            )
+
+            index_groupby = pd.DataFrame(
+                {"time": train_set["week"].values, "index": indices, "effects": effects}
+            ).groupby(["time", "index"])
+            # pd.DataFrame(
+            #     {"time": train_set["week"].values, "index": indices, "predict": predictions[0]}).to_csv("results/predicions.csv",index=False)
+        
+        elif "timeline" in features:
+            feature = [feature for feature in features if feature != "timeline"][0]
+            quantiles, real_bins = _get_quantiles(train_set, feature, bins)
+
+            # Define parameters of sliding windows
+            window_size = 7  # window sizes, such as 7
+            step_size = 3    # step sizes, such as 1
+
+            # obtain the maximum value and total windows number of the timeline
+            max_timeline = train_set['timeline'].max()
+            total_windows = (max_timeline - window_size + step_size) // step_size
+            
+            # 构建quantiles_list
+            quantiles_list = tuple(
+                np.arange(total_windows + 1) if f == 'timeline' else quantiles 
+                for f in features
+            )
+            # 构建bins_list
+            bins_list = tuple(
+                total_windows if f == 'timeline' else real_bins 
+                for f in features
+            )
+
+            # initialize the predictions array
+            predictions = [np.zeros_like(train_set[feature]), np.zeros_like(train_set[feature])]
+
+            # Sliding window computation
+            tw_num = 0 # set index of timeline window
+            window_effects_df = pd.DataFrame() # initialize results dataframe
+            for start_day in range(0, max_timeline - window_size + 1, step_size):
+                # define the end day of the current window
+                end_day = start_day + window_size
+
+                # select columns inside window
+                window_indices = (train_set['timeline'] >= start_day) & (train_set['timeline'] < end_day)
+                feature_indices = np.clip(
+                    np.digitize(train_set[window_indices][feature], quantiles, right=True) - 1, 0, None
+                )
+
+                # 对于每个 offset
+                for offset in range(2):
+                    mod_train_set = train_set.copy()
+                    mod_train_set.loc[window_indices, feature] = quantiles[feature_indices + offset]
+                    predictions[offset][window_indices] = predictor(mod_train_set)[window_indices]
+
+                effects = predictions[1] - predictions[0]
+                window_effects_data = pd.DataFrame({
+                                                    'time': tw_num, 
+                                                    "index": feature_indices,
+                                                    'effects': effects[window_indices]
+                                                    })
+                window_effects_df = pd.concat([window_effects_df, window_effects_data], ignore_index=True)
+                tw_num += 1
+            
+            index_groupby = window_effects_df.groupby(["time", "index"])
+            # window_effects_df.to_csv("results/window_effects.csv", index = False)
+        else:
+            raise ValueError("features should contain 'week' or 'timeline'.")
+        
+        # # 整个pdp
+        #     for i in range(len(quantiles)):
+        #         mod_train_set = train_set.copy()
+        #         mod_train_set.loc[week_indices, features] = quantiles[i]
+        #         predictions[i][week_indices] = predictor(mod_train_set)[week_indices]
+        # np.save("results/pdp_array.npy", predictions)
+        
+        # indices = np.clip(
+        #     np.digitize(train_set[feature], quantiles, right=True) - 1, 0, None
+        # )
+        
+    # rango add 2023.11.16###################################################################
+    
+    else:
+        quantiles_list, bins_list = tuple(
+            zip(
+                *(
+                    _get_quantiles(train_set, feature, n_bin)
+                    for feature, n_bin in zip(features, _check_two_ints(bins))
+                )
             )
         )
-    )
-    logger.debug("Quantiles: {}.", quantiles_list)
+        logger.debug("Quantiles: {}.", quantiles_list)
+        print(quantiles_list)
+        print(bins_list)
 
-    # Define the bins the feature samples fall into. Shift and clip to ensure we are
-    # getting the index of the left bin edge and the smallest sample retains its index
-    # of 0.
-    indices_list = [
-        np.clip(np.digitize(train_set[feature], quantiles, right=True) - 1, 0, None)
-        for feature, quantiles in zip(features, quantiles_list)
-    ]
+        # Define the bins the feature samples fall into. Shift and clip to ensure we are
+        # getting the index of the left bin edge and the smallest sample retains its index
+        # of 0.
+        indices_list = [
+            np.clip(np.digitize(train_set[feature], quantiles, right=True) - 1, 0, None)
+            for feature, quantiles in zip(features, quantiles_list)
+        ]
 
-    # Invoke the predictor at the corners of the bins. Then compute the second order
-    # difference between the predictions at the bin corners.
-    predictions = {}
-    for shifts in product(*(range(2),) * 2):
-        mod_train_set = train_set.copy()
-        for i in range(2):
-            mod_train_set[features[i]] = quantiles_list[i][indices_list[i] + shifts[i]]
-        predictions[shifts] = predictor(mod_train_set)
-    # The individual effects.
-    effects = (predictions[(1, 1)] - predictions[(1, 0)]) - (
-        predictions[(0, 1)] - predictions[(0, 0)]
-    )
+        # Invoke the predictor at the corners of the bins. Then compute the second order
+        # difference between the predictions at the bin corners.
+        predictions = {}
+        for shifts in product(*(range(2),) * 2):
+            mod_train_set = train_set.copy()
+            for i in range(2):
+                mod_train_set[features[i]] = quantiles_list[i][indices_list[i] + shifts[i]]
+            predictions[shifts] = predictor(mod_train_set)
+        # The individual effects.
+        effects = (predictions[(1, 1)] - predictions[(1, 0)]) - (
+            predictions[(0, 1)] - predictions[(0, 0)]
+        )
 
-    # Group the effects by their indices along both axes.
-    index_groupby = pd.DataFrame(
-        {"index_0": indices_list[0], "index_1": indices_list[1], "effects": effects}
-    ).groupby(["index_0", "index_1"])
+        # Group the effects by their indices along both axes.
+        index_groupby = pd.DataFrame(
+            {"index_0": indices_list[0], "index_1": indices_list[1], "effects": effects}
+        ).groupby(["index_0", "index_1"])
 
     # Compute mean effects.
     mean_effects = index_groupby.mean()
@@ -546,51 +687,76 @@ def _second_order_ale_quant(predictor, train_set, features, bins):
 
         # Replace the invalid bin values with the nearest valid ones.
         ale[1:, 1:][missing_bin_mask] = ale[1:, 1:][nearest_indices]
+    
+    if compute_time_vary:
+        time_index = np.argwhere(features == "week")[0][0] if "week" in features \
+                        else np.argwhere(features == "timeline")[0][0]
+        ale = np.cumsum(ale, axis=1-time_index)
+        if time_index == 0:
+            # "week" 在第一个位置，对列应用 _get_centres
+            ale = _get_centres(ale.T).T
+            # 删除全0行或全0列
+            ale = ale[1:,:]
+            # 计算每行的加权平均值
+            row_weighted_averages = np.sum(samples_grid * ale, axis=1) / np.sum(samples_grid, axis=1)
+            # 从ale的每一行减去相应的加权平均值
+            ale -= row_weighted_averages[:, np.newaxis]
+        else:
+            # "week" 在第二个位置，对行应用 _get_centres
+            ale = _get_centres(ale)
+            ale=ale[:,1:]
+            # 计算每列的加权平均值
+            column_weighted_averages = np.sum(samples_grid * ale, axis=0) / np.sum(samples_grid, axis=0)
+            # 从ale的每一列减去相应的加权平均值
+            ale -= column_weighted_averages
+    
+    else:
+        # Compute the cumulative sums.
+        ale = np.cumsum(np.cumsum(ale, axis=0), axis=1)
 
-    # Compute the cumulative sums.
-    ale = np.cumsum(np.cumsum(ale, axis=0), axis=1)
+        # Subtract first order effects along both axes separately.
+        for i in range(2):
+            # Depending on `i`, reverse the arguments to operate on the opposite axis.
+            flip = slice(None, None, 1 - 2 * i)
 
-    # Subtract first order effects along both axes separately.
-    for i in range(2):
-        # Depending on `i`, reverse the arguments to operate on the opposite axis.
-        flip = slice(None, None, 1 - 2 * i)
+            # Undo the cumulative sum along the axis.
+            first_order = ale[(slice(1, None), ...)[flip]] - ale[(slice(-1), ...)[flip]]
+            # Average the diffs across the other axis.
+            first_order = (
+                first_order[(..., slice(1, None))[flip]]
+                + first_order[(..., slice(-1))[flip]]
+            ) / 2
+            # Weight by the number of samples in each bin.
+            first_order *= samples_grid
+            # Take the sum along the axis.
+            first_order = np.sum(first_order, axis=1 - i)
+            # Normalise by the number of samples in the bins along the axis.
+            first_order /= np.sum(samples_grid, axis=1 - i)
+            # The final result is the cumulative sum (with an additional 0).
+            first_order = np.array([0, *np.cumsum(first_order)]).reshape((-1, 1)[flip])
 
-        # Undo the cumulative sum along the axis.
-        first_order = ale[(slice(1, None), ...)[flip]] - ale[(slice(-1), ...)[flip]]
-        # Average the diffs across the other axis.
-        first_order = (
-            first_order[(..., slice(1, None))[flip]]
-            + first_order[(..., slice(-1))[flip]]
-        ) / 2
-        # Weight by the number of samples in each bin.
-        first_order *= samples_grid
-        # Take the sum along the axis.
-        first_order = np.sum(first_order, axis=1 - i)
-        # Normalise by the number of samples in the bins along the axis.
-        first_order /= np.sum(samples_grid, axis=1 - i)
-        # The final result is the cumulative sum (with an additional 0).
-        first_order = np.array([0, *np.cumsum(first_order)]).reshape((-1, 1)[flip])
+            # Subtract the first order effect.
+            ale -= first_order
 
-        # Subtract the first order effect.
-        ale -= first_order
-
-    # Compute the ALE at the bin centres.
-    ale = (
-        reduce(
-            add,
-            (
-                ale[i : ale.shape[0] - 1 + i, j : ale.shape[1] - 1 + j]
-                for i, j in list(product(*(range(2),) * 2))
-            ),
+        # Compute the ALE at the bin centres.
+        ale = (
+            reduce(
+                add,
+                (
+                    ale[i : ale.shape[0] - 1 + i, j : ale.shape[1] - 1 + j]
+                    for i, j in list(product(*(range(2),) * 2))
+                ),
+            )
+            / 4
         )
-        / 4
-    )
 
-    # Centre the ALE by subtracting its expectation value.
-    ale -= np.sum(samples_grid * ale) / train_set.shape[0]
 
-    # Mark the originally missing points as such to enable later interpretation.
-    ale.mask = missing_bin_mask
+        # Centre the ALE by subtracting its expectation value.
+        ale -= np.sum(samples_grid * ale) / train_set.shape[0]
+
+        # Mark the originally missing points as such to enable later interpretation.
+        ale.mask = missing_bin_mask
+        
     return ale, quantiles_list
 
 
@@ -702,6 +868,11 @@ def ale_plot(
     fig, ax = plt.subplots()
 
     features = _parse_features(features)
+    
+    # 判断是否探究时变ale
+    compute_time_vary = False
+    if ('week' in features or 'timeline' in features) and len(features) == 2:
+        compute_time_vary = True
 
     if len(features) == 1:
         if not isinstance(bins, (int, np.integer)):
@@ -766,15 +937,23 @@ def ale_plot(
                 train_set,
                 features,
                 bins,
+                compute_time_vary
             )
-            _second_order_quant_plot(fig, ax, quantiles_list, ale)
-            _ax_labels(
+            _second_order_quant_plot(fig, ax, quantiles_list, ale, compute_time_vary=compute_time_vary)
+            if not compute_time_vary:
+                _ax_labels(
                 ax,
                 "Feature '{}'".format(features[0]),
                 "Feature '{}'".format(features[1]),
-            )
-            for twin, quantiles in zip(("x", "y"), quantiles_list):
-                _ax_quantiles(ax, quantiles, twin=twin)
+                )
+                for twin, quantiles in zip(("x", "y"), quantiles_list):
+                    _ax_quantiles(ax, quantiles, twin=twin)
+            else:
+                _ax_labels(
+                ax,
+                "week",
+                "Feature '{}'".format([feature for feature in features if feature != "week"][0]),
+                )
             _ax_title(
                 ax,
                 "Second-order ALE of features '{0}' and '{1}'".format(
@@ -789,4 +968,4 @@ def ale_plot(
             )
         )
     #plt.show()
-    return fig, ax
+    return fig, ax, ale

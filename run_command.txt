@@ -22,5 +22,8 @@ python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_10000_log
 python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_10000_log_gamma_0.6'  --results_dir='results/real_data_results3' --data_filename='data/sample5000_log_for_predict.txt' --num_substitute_hidden_confounders=1
 python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_10000_log_gamma_0.6'  --results_dir='results/real_data_results3' --data_filename='results/real_data_results3/sample_10000_log_gamma_0.6_dataset_with_substitute_confounders_for_predict.txt' --num_substitute_hidden_confounders=1
 
+-- 使用2019年做对比的ALE
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_10000_log_gamma_0.6'  --results_dir='results/real_data_results3' --data_filename='data/sample5000_log_for_predict_2019.txt' --num_substitute_hidden_confounders=1
+
 分箱：
 0.0 1173.652 2942.316 5842.279 10852.704 36933.88

@@ -219,7 +219,13 @@ def predict_effects(dataset, model_name, calculate_counterfactual, b_use_predict
 
     # modify the interested treatment in dataset_map to 0 
     if calculate_counterfactual:
-        dataset['treatments'][:, :, 0] = 5.0896
+        dataset['treatments'][:, :, 1:] = 0
+    
+    # dataset['covariates'] = dataset['covariates'][:,5:,:]
+    # dataset['treatments'] = dataset['treatments'][:,5:,:]
+    # dataset['predicted_confounders'] = dataset['predicted_confounders'][:,5:,:]
+    # dataset['outcomes'] = dataset['outcomes'][:,5:,:]
+    # dataset['sequence_length']-=5
     
     # data preprocessing - normalization
     num_samples, length, num_covariates = dataset['covariates'].shape
@@ -254,8 +260,12 @@ def predict_effects(dataset, model_name, calculate_counterfactual, b_use_predict
         all_cols = config['covariate_cols'] + config['treatment_cols'] + config['confounder_cols']
         
         X = pd.DataFrame(all_data, columns=all_cols)
-        # add timeline column
+        # add timeline and week column
         X['timeline'] = np.tile(np.arange(length), num_samples)
+        start_date = pd.Timestamp('2019-01-01')
+        X['week'] = X['timeline'].apply(lambda x: start_date + pd.Timedelta(days=x)).dt.week - 1
+        # start_date = pd.Timestamp('2020-01-06')
+        # X['week'] = X['timeline'].apply(lambda x: start_date + pd.Timedelta(days=x)).dt.week - 2 # 从第二周开始
 
         # define predictor
         predictor = lambda x: ale_use_predict(x, dataset, config, MODEL_ROOT, b_use_predicted_confounders)
@@ -272,14 +282,14 @@ def predict_effects(dataset, model_name, calculate_counterfactual, b_use_predict
         #                 monte_carlo_rep=100,
         #                 monte_carlo_ratio=0.6,)
         # else:
-        ale_fig, ale_ax = ale_plot(
+        ale_fig, ale_ax, ale = ale_plot(
                     None, 
                     X,
                     features,
                     bins=20,
                     predictor=predictor,)
 
-        return ale_fig
+        return ale_fig, ale
 
     def ale_use_predict(X, dataset, config, model_root, b_use_predicted_confounders):
         # change data
@@ -297,11 +307,16 @@ def predict_effects(dataset, model_name, calculate_counterfactual, b_use_predict
     ##############################################################################################################
 
     # plot ale
-    logging.info('Compute Accumulated Local Effects (ALE), draw and save the ale plot')
-    ale_fig = compute_ale(config, ['conformity','voluntary'])
-    #ale_fig = compute_ale(config, ['voluntary'])
+    # logging.info('Compute Accumulated Local Effects (ALE), draw and save the ale plot')
+    #ale_fig, ale = compute_ale(config, ['conformity'])
+    #print(ale)
+    # ale_fig, ale = compute_ale(config, ['week', 'conformity'])
+    # ale_fig, ale = compute_ale(config, ['timeline', 'conformity'])
+    #print(ale)
+    #ale_fig, ale = compute_ale(config, ['voluntary', 'conformity'])
+    #print(ale)
     #save fig
-    ale_fig.savefig('results/img/conformity_case_ale_plot.png')
+    # ale_fig.savefig('results/img/conformity_time_ale_2019.png')
 
     results = dict()
     results['means'] = means
@@ -355,4 +370,4 @@ def test_time_series_deconfounder(dataset, num_substitute_confounders, exp_name,
     #potential_results = predict_effects(dataset_map, 'rmsn_' + str(exp_name), calculate_counterfactual=True, b_use_predicted_confounders=True)
     #results['diff'] = results['means']- potential_results['means']
     #results['potential_means'] = potential_results['means']
-    # write_results_to_file(model_prediction_file, results)
+    write_results_to_file(model_prediction_file, results)
