@@ -12,6 +12,8 @@ import pandas as pd
 import logging
 
 import rmsn.libs.net_helpers as helpers
+import tensorflow_probability as tfp
+
 
 _ACTIVATION_MAP = {'sigmoid': tf.nn.sigmoid,
                    'elu': tf.nn.elu,
@@ -20,7 +22,7 @@ _ACTIVATION_MAP = {'sigmoid': tf.nn.sigmoid,
                    'linear': lambda x: x}
 
 
-class StateDumpingRNN(tf.contrib.rnn.RNNCell):
+class StateDumpingRNN(tf.compat.v1.nn.rnn_cell.RNNCell):
     """ This RNNCell dumps out internal states for lstms"""
 
     def __init__(self, lstm):
@@ -44,7 +46,7 @@ class StateDumpingRNN(tf.contrib.rnn.RNNCell):
         return state, state
 
 
-class Seq2SeqDecoderCell(tf.contrib.rnn.RNNCell):
+class Seq2SeqDecoderCell(tf.compat.v1.nn.rnn_cell.RNNCell):
     """ Decoder cell which allows for feedback, and external inputs during training """
     def __init__(self, lstm, W, b, b_training_mode=False):
 
@@ -88,7 +90,7 @@ class Seq2SeqDecoderCell(tf.contrib.rnn.RNNCell):
 
 
         # TODO: FIX HACK! THis forces this lstm to be in a different scope
-        with tf.variable_scope("seq2seq"):
+        with tf.compat.v1.variable_scope("seq2seq"):
             output, state = self.lstm_cell(combined_inputs, actual_states)
             output = tf.matmul(output, self.W) + self.b
 
@@ -136,21 +138,21 @@ class RnnModel:
         variable_scope_name = "seq2seq" if "seq2seq" in self.net_name else "network"
 
 
-        with tf.variable_scope(variable_scope_name):
-            self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(self.hidden_layer_size,
+        with tf.compat.v1.variable_scope(variable_scope_name):
+            self.rnn_cell = tf.compat.v1.nn.rnn_cell.BasicLSTMCell(self.hidden_layer_size,
                                                          activation=_ACTIVATION_MAP[self.memory_activation_type],
                                                          state_is_tuple=False,
                                                          name=variable_scope_name
                                                                 if variable_scope_name != "network" else None)
             self.output_activation = _ACTIVATION_MAP[self.output_activation_type]
-            self.output_w = tf.get_variable("Output_W",
+            self.output_w = tf.compat.v1.get_variable("Output_W",
                                             [self.hidden_layer_size, self.output_size],
                                             dtype=tf.float32,
-                                            initializer=tf.contrib.layers.xavier_initializer())
-            self.output_b = tf.get_variable("Output_b",
+                                            initializer=tf.compat.v1.keras.initializers.VarianceScaling(scale=1.0, mode="fan_avg", distribution="uniform"))
+            self.output_b = tf.compat.v1.get_variable("Output_b",
                                             [self.output_size],
                                             dtype=tf.float32,
-                                            initializer=tf.contrib.layers.xavier_initializer())
+                                            initializer=tf.compat.v1.keras.initializers.VarianceScaling(scale=1.0, mode="fan_avg", distribution="uniform"))
 
         # Training params
         self.performance_metric = params['performance_metric']
@@ -159,7 +161,7 @@ class RnnModel:
         self.learning_rate = params['learning_rate']
         self.max_global_norm = params['max_norm']
         self.backprop_length = params['backprop_length']
-        self.global_step = tf.get_variable('global_step_tfrnn',
+        self.global_step = tf.compat.v1.get_variable('global_step_tfrnn',
                                            initializer=0,
                                            dtype=np.int32,
                                            trainable=False)
@@ -198,32 +200,32 @@ class RnnModel:
             self.encoder_state_size = encoder_size
 
             if b_single_layer:
-                self.memory_adapter_layer = {'W1': tf.get_variable("Adapter_Layer1_W",
+                self.memory_adapter_layer = {'W1': tf.compat.v1.get_variable("Adapter_Layer1_W",
                                                                    [self.encoder_state_size,  self.hidden_layer_size*2],
                                                                    dtype=tf.float32,
-                                                                   initializer=tf.contrib.layers.xavier_initializer()),
-                                             'b1': tf.get_variable("Adapter_Layer1_b",
+                                                                   initializer=tf.compat.v1.keras.initializers.VarianceScaling(scale=1.0, mode="fan_avg", distribution="uniform")),
+                                             'b1': tf.compat.v1.get_variable("Adapter_Layer1_b",
                                                                    [self.hidden_layer_size*2],
                                                                    dtype=tf.float32,
-                                                                   initializer=tf.contrib.layers.xavier_initializer()),
+                                                                   initializer=tf.compat.v1.keras.initializers.VarianceScaling(scale=1.0, mode="fan_avg", distribution="uniform")),
                                              }
             else:
-                self.memory_adapter_layer = {'W1': tf.get_variable("Adapter_Layer1_W",
+                self.memory_adapter_layer = {'W1': tf.compat.v1.get_variable("Adapter_Layer1_W",
                                                                    [self.encoder_state_size, self.memory_adapter_size],
                                                                    dtype=tf.float32,
-                                                                   initializer=tf.contrib.layers.xavier_initializer()),
-                                             'b1': tf.get_variable("Adapter_Layer1_b",
+                                                                   initializer=tf.compat.v1.keras.initializers.VarianceScaling(scale=1.0, mode="fan_avg", distribution="uniform")),
+                                             'b1': tf.compat.v1.get_variable("Adapter_Layer1_b",
                                                                    [self.memory_adapter_size],
                                                                    dtype=tf.float32,
-                                                                   initializer=tf.contrib.layers.xavier_initializer()),
-                                             'W2': tf.get_variable("Adapter_Layer2_W",
+                                                                   initializer=tf.compat.v1.keras.initializers.VarianceScaling(scale=1.0, mode="fan_avg", distribution="uniform")),
+                                             'W2': tf.compat.v1.get_variable("Adapter_Layer2_W",
                                                                    [self.memory_adapter_size, self.hidden_layer_size*2],
                                                                    dtype=tf.float32,
-                                                                   initializer=tf.contrib.layers.xavier_initializer()),
-                                             'b2': tf.get_variable("Adapter_Layer2_b",
+                                                                   initializer=tf.compat.v1.keras.initializers.VarianceScaling(scale=1.0, mode="fan_avg", distribution="uniform")),
+                                             'b2': tf.compat.v1.get_variable("Adapter_Layer2_b",
                                                                    [self.hidden_layer_size*2], # LSTM memory is double concated
                                                                    dtype=tf.float32,
-                                                                   initializer=tf.contrib.layers.xavier_initializer())
+                                                                   initializer=tf.compat.v1.keras.initializers.VarianceScaling(scale=1.0, mode="fan_avg", distribution="uniform"))
                                              }
 
         # Use elu and linear to avoid placing any restrictions on the range of internal activations
@@ -245,8 +247,8 @@ class RnnModel:
 
         if placeholder_time_steps:
             data_chunk = {}
-            data_chunk['inputs'] = tf.placeholder(tf.float32,[None, placeholder_time_steps, self.input_size])
-            data_chunk['sequence_lengths'] = tf.placeholder(tf.float32,[None])  # Length
+            data_chunk['inputs'] = tf.compat.v1.placeholder(tf.float32,[None, placeholder_time_steps, self.input_size])
+            data_chunk['sequence_lengths'] = tf.compat.v1.placeholder(tf.float32,[None])  # Length
         else:
             if use_validation_set is None:
                 dataset = self.training_data.batch(self.minibatch_size)
@@ -255,7 +257,7 @@ class RnnModel:
             else:
                 dataset = self.test_data.batch(self.minibatch_size)
 
-            iterator = tf.data.Iterator.from_structure(dataset.output_types,
+            iterator = tf.compat.v1.data.Iterator.from_structure(dataset.output_types,
                                                        dataset.output_shapes)
 
             initializer = iterator.make_initializer(dataset)
@@ -305,7 +307,7 @@ class RnnModel:
         lstm_additional_size = self.output_size \
             if not self.b_use_seq2seq_training_mode and self.b_use_seq2seq_feedback \
             else 0
-        cell = tf.nn.rnn_cell.DropoutWrapper(self.rnn_cell,
+        cell = tf.compat.v1.nn.rnn_cell.DropoutWrapper(self.rnn_cell,
                                              input_keep_prob=keep_probs,
                                              output_keep_prob=keep_probs,
                                              state_keep_prob=keep_probs,
@@ -328,7 +330,7 @@ class RnnModel:
 
         for i in range(num_samples):
 
-            val, states = tf.nn.dynamic_rnn(cell,
+            val, states = tf.compat.v1.nn.dynamic_rnn(cell,
                                             input_minibatch,
                                             initial_state=initial_states,  # None for default
                                             dtype=tf.float32,
@@ -336,7 +338,7 @@ class RnnModel:
 
             if b_dump_all_states:
                 state_dumping_cell = StateDumpingRNN(cell)
-                all_states, dumped_states = tf.nn.dynamic_rnn(state_dumping_cell,
+                all_states, dumped_states = tf.compat.v1.nn.dynamic_rnn(state_dumping_cell,
                                                               input_minibatch,
                                                               initial_state=initial_states,  # None for default
                                                               dtype=tf.float32,
@@ -378,8 +380,8 @@ class RnnModel:
         # Dumping output
         samples = tf.concat(outputs, axis=0)
         mean_estimate = tf.reduce_mean(samples, axis=0)
-        upper_bound = tf.contrib.distributions.percentile(samples, q=95.0, axis=0)
-        lower_bound = tf.contrib.distributions.percentile(samples, q=5.0, axis=0)
+        upper_bound = tfp.stats.percentile(samples, q=95.0, axis=0)
+        lower_bound = tfp.stats.percentile(samples, q=5.0, axis=0)
 
         # Averages across all samples - no difference for single sample
         ave_state = tf.reduce_mean(tf.concat(states_list, axis=0), axis=0)
@@ -395,7 +397,7 @@ class RnnModel:
                             .batch(self.minibatch_size) \
                             .repeat(self.epochs)
 
-        iterator = training_dataset.make_one_shot_iterator()
+        iterator = tf.compat.v1.data.make_one_shot_iterator(training_dataset)
         data_chunk = iterator.get_next()
 
         input_minibatch = tf.cast(data_chunk['inputs'], tf.float32)
@@ -429,7 +431,7 @@ class RnnModel:
         lstm_additional_size = self.output_size \
                                 if not self.b_use_seq2seq_training_mode and self.b_use_seq2seq_feedback \
                                 else 0
-        cell = tf.nn.rnn_cell.DropoutWrapper(self.rnn_cell,
+        cell = tf.compat.v1.nn.rnn_cell.DropoutWrapper(self.rnn_cell,
                                              input_keep_prob=keep_probs,
                                              output_keep_prob=keep_probs,
                                              state_keep_prob=keep_probs,
@@ -466,13 +468,13 @@ class RnnModel:
         for chunk_size in chunk_sizes:
             input_chunk = tf.slice(input_minibatch, [0, start, 0], [-1, chunk_size, self.input_size])
             if states is not None and use_truncated_bptt:
-                val, states = tf.nn.dynamic_rnn(cell,
+                val, states = tf.compat.v1.nn.dynamic_rnn(cell,
                                                 input_chunk,
                                                 sequence_length=sequence_lengths,
                                                 dtype=tf.float32,
                                                 initial_state=states)
             else:
-                val, states = tf.nn.dynamic_rnn(cell,
+                val, states = tf.compat.v1.nn.dynamic_rnn(cell,
                                                 input_chunk,
                                                 sequence_length=sequence_lengths,
                                                 dtype=tf.float32)
@@ -529,15 +531,15 @@ class RnnModel:
                    / tf.reduce_sum(active_entries)  # cos some zero entires
 
         elif self.performance_metric == "xentropy":
-            loss = tf.reduce_sum((output_minibatch * -tf.log(predictions + 1e-8)
-                                  + (1 - output_minibatch) * -tf.log(1 - predictions + 1e-8))
+            loss = tf.reduce_sum((output_minibatch * -tf.math.log(predictions + 1e-8)
+                                  + (1 - output_minibatch) * -tf.math.log(1 - predictions + 1e-8))
                                  * active_entries * weights) \
                    / tf.reduce_sum(active_entries)
         else:
             raise ValueError("Unknown performance metric {}".format(self.performance_metric))
 
         if self.softmax_size > 0:
-            loss += tf.reduce_sum(softmax_output_minibatch * -tf.log(softmax_predictions + 1e-8)
+            loss += tf.reduce_sum(softmax_output_minibatch * -tf.math.log(softmax_predictions + 1e-8)
                                   * softmax_active * weights) \
                    / tf.reduce_sum(softmax_active)
 

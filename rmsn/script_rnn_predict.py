@@ -12,8 +12,8 @@ from rmsn.configs import load_optimal_parameters
 from rmsn.core_routines import predict
 import rmsn.core_routines as core
 
-from rmsn.libs.model_rnn import RnnModel
-import rmsn.libs.net_helpers as helpers
+import rmsn.libs.model_process as model_process
+import rmsn.libs.data_process as data_process
 
 from sklearn.metrics import roc_auc_score, average_precision_score
 
@@ -39,17 +39,24 @@ def rnn_predict(dataset, MODEL_ROOT, b_use_predicted_confounders, b_use_oracle_c
     logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
     # Setup tensorflow
-    tf_device = 'gpu'
-    if tf_device == "cpu":
-        tf_config = tf.ConfigProto(log_device_placement=False, device_count={'GPU': 0})
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        try:
+            # set TensorFlow to use the first GPU
+            gpu0 = gpus[0]
+            tf.config.set_visible_devices([gpu0], 'GPU')
+            # set GPU memery growth
+            tf.config.experimental.set_memory_growth(gpu0, True)
+            logging.info("Using GPU with memory growth")
+        except RuntimeError as e:
+            # Changing device settings after the program is running may cause errors
+            logging.info(e)
     else:
-        tf_config = tf.ConfigProto(log_device_placement=False, device_count={'GPU': 1})
-        tf_config.gpu_options.allow_growth = True
+        # if no GPU£¬using CPU
+        logging.info("No GPU found, using CPU")
 
     configs = [
-        load_optimal_parameters('rnn_propensity_weighted',
-                                expt_name, MODEL_ROOT,
-                                add_net_name=True)
+        model_process.load_optimal_parameters(net_name = 'rnn_propensity_weighted',MODEL_ROOT = MODEL_ROOT)
     ]
 
     # Config
@@ -65,7 +72,7 @@ def rnn_predict(dataset, MODEL_ROOT, b_use_predicted_confounders, b_use_oracle_c
     mse_by_followup = {}
     for config in configs:
         net_name = config[0]
-
+        serialisation_name = config[-1]
         projection_map[net_name] = {}
 
         # scaling_data = pickle_map['scaling_data']  # use scaling data from above
@@ -75,10 +82,9 @@ def rnn_predict(dataset, MODEL_ROOT, b_use_predicted_confounders, b_use_oracle_c
         b_propensity_weight = "rnn_propensity_weighted" in net_name
         b_use_actions_only = "treatment_rnn_action_inputs_only" in net_name
 
-        # In[*]: Compute base MSEs
         # Extract only relevant trajs and shift data
         keep_first_point = True
-        dataset_processed = core.get_processed_data(dataset, b_predict_actions, b_use_actions_only, b_use_predicted_confounders, 
+        dataset_processed = data_process.get_processed_data(dataset, b_predict_actions, b_use_actions_only, b_use_predicted_confounders, 
                                                     b_use_oracle_confounders, b_remove_x1, keep_first_point)
         dataset_processed['output_means'] = dataset['output_means']
         dataset_processed['output_stds'] = dataset['output_stds']
@@ -97,19 +103,19 @@ def rnn_predict(dataset, MODEL_ROOT, b_use_predicted_confounders, b_use_oracle_c
         hidden_activation = activation_map[net_name][0]
         output_activation = activation_map[net_name][1]
 
-        # Run tests
+        # tansform data to tf dataset
+        tf_data = data_process.convert_to_tf_dataset(dataset_processed, minibatch_size)
+
+        # Load model and predict
         model_folder = os.path.join(MODEL_ROOT, net_name)
-
-        means, ub, lb, test_states \
-            = predict(dataset_processed, tf_config,
-                   net_name, expt_name, dropout_rate, num_features, num_outputs,
-                   memory_multiplier, num_epochs, minibatch_size, learning_rate, max_norm,
-                   hidden_activation, output_activation, model_folder,
-                   b_use_state_initialisation=False, b_dump_all_states=True)
+        model = model_process.load_model(model_folder, serialisation_name)
+        input_data_for_prediction = tf_data.map(lambda x: x['inputs'])
+        predictions = model.predict(input_data_for_prediction)
         
-        # Attach conformity class
-        labels = dataset['treatments'][:,:,0:5]
+        # Rescale predictions
+        predictions = predictions * dataset_processed['output_stds'] + dataset_processed['output_means']
         #observations = dataset['outcomes']*dataset['output_stds']+dataset['output_means']
-        observations = dataset_processed['outputs']
+        observations = dataset_processed['outputs'] * dataset_processed['output_stds'] + dataset_processed['output_means']
 
-    return means, ub, lb, labels, observations
+    #return means, ub, lb, observations
+    return predictions, observations

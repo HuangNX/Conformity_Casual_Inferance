@@ -1,4 +1,4 @@
-"""
+﻿"""
 CODE ADAPTED FROM: https://github.com/sjblim/rmsn_nips_2018
 
 Implementation of Recurrent Marginal Structural Networks (R-MSNs):
@@ -10,18 +10,20 @@ import rmsn.configs
 
 import tensorflow as tf
 import numpy as np
+import pandas as pd
 import logging
 import os
 import argparse
 
-from rmsn.core_routines import train
-import rmsn.core_routines as core
+#from rmsn.core_routines import train
+#import rmsn.core_routines as core
+import rmsn.libs.model_process as model_process
+import rmsn.libs.data_process as data_process
 
 ROOT_FOLDER = rmsn.configs.ROOT_FOLDER
 #MODEL_ROOT = configs.MODEL_ROOT
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 logging.getLogger().setLevel(logging.INFO)
-
 
 # EDIT ME! ################################################################################################
 # Defines specific parameters to train for - skips hyperparamter optimisation if so
@@ -43,6 +45,7 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
     if networks_to_train == "propensity_networks":
         logging.info("Training propensity networks")
         net_names = ['treatment_rnn_action_inputs_only', 'treatment_rnn']
+        #net_names = ['treatment_rnn']
 
     elif networks_to_train == "encoder":
         logging.info("Training R-MSN encoder")
@@ -70,19 +73,29 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
                       }
 
     # Setup tensorflow
-    tf_device = 'gpu'
-    if tf_device == "cpu":
-        config = tf.ConfigProto(log_device_placement=False, device_count={'GPU': 0})
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        try:
+            # set TensorFlow to use the first GPU
+            gpu0 = gpus[0]
+            tf.config.set_visible_devices([gpu0], 'GPU')
+            # set GPU memery growth
+            tf.config.experimental.set_memory_growth(gpu0, True)
+            logging.info("Using GPU with memory growth")
+        except RuntimeError as e:
+            # Changing device settings after the program is running may cause errors
+            logging.info(e)
     else:
-        config = tf.ConfigProto(log_device_placement=False, device_count={'GPU': 1})
-        config.gpu_options.allow_growth = True
+        # if no GPU，using CPU
+        logging.info("No GPU found, using CPU")
 
     training_data = dataset_map['training_data']
     validation_data = dataset_map['validation_data']
     test_data = dataset_map['test_data']
 
     # Start Running hyperparam opt
-    opt_params = {}
+    #opt_params = {}
+    mse_dict = {}
     for net_name in net_names:
 
         # Re-run hyperparameter optimisation if parameters are not specified, otherwise train with defined params
@@ -96,13 +109,13 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
 
 
        # Extract only relevant trajs and shift data
-        training_processed = core.get_processed_data(training_data, b_predict_actions,
+        training_processed = data_process.get_processed_data(training_data, b_predict_actions,
                                                      b_use_actions_only, b_use_predicted_confounders,
                                                      b_use_oracle_confounders, b_remove_x1)
-        validation_processed = core.get_processed_data(validation_data, b_predict_actions,
+        validation_processed = data_process.get_processed_data(validation_data, b_predict_actions,
                                                        b_use_actions_only, b_use_predicted_confounders,
                                                        b_use_oracle_confounders, b_remove_x1)
-        test_processed = core.get_processed_data(test_data, b_predict_actions,
+        test_processed = data_process.get_processed_data(test_data, b_predict_actions,
                                                  b_use_actions_only, b_use_predicted_confounders,
                                                  b_use_oracle_confounders, b_remove_x1)
 
@@ -128,9 +141,9 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
 
             propensity_weights /= propensity_weights.mean()
 
-            training_processed['propensity_weights'] = propensity_weights
+            training_processed['propensity_weights'] = np.array(propensity_weights, dtype='float32')
 
-        # Start hyperparamter optimisation
+        # Start hyperparamter optimisation (training model directly)
         hyperparam_count = 0
         while True:
 
@@ -156,25 +169,72 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
                 hidden_activation, output_activation = activation_map[net_name]
 
             model_folder = os.path.join(MODEL_ROOT, net_name)
-            
-            hyperparam_opt = train(net_name, expt_name,
-                                  training_processed, validation_processed, test_processed,
-                                  dropout_rate, memory_multiplier, num_epochs,
-                                  minibatch_size, learning_rate, max_norm,
-                                  use_truncated_bptt,
-                                  num_features, num_outputs, model_folder,
-                                  hidden_activation, output_activation,
-                                  config,
-                                  "hyperparam opt: {} of {}".format(hyperparam_count,
-                                                                    max_hyperparam_runs))
 
-            hyperparam_count = len(hyperparam_opt.columns)
+            # transform data to tf format
+            tf_data_train = data_process.convert_to_tf_dataset(training_processed, minibatch_size)
+            tf_data_valid = data_process.convert_to_tf_dataset(validation_processed, minibatch_size)
+            tf_data_test = data_process.convert_to_tf_dataset(test_processed, minibatch_size)
+            
+            #hyperparam_opt = train(net_name, expt_name,
+            #                      training_processed, validation_processed, test_processed,
+            #                      dropout_rate, memory_multiplier, num_epochs,
+            #                      minibatch_size, learning_rate, max_norm,
+            #                      use_truncated_bptt,
+            #                      num_features, num_outputs, model_folder,
+            #                      hidden_activation, output_activation,
+            #                      config,
+            #                      "hyperparam opt: {} of {}".format(hyperparam_count,
+            #                                                        max_hyperparam_runs))
+
+            # construct model parameters
+            hidden_layer_size = int(memory_multiplier * num_features)
+            model_parameters = {'net_name': net_name,
+                    'experiment_name': expt_name,
+                    'training_dataset': tf_data_train,
+                    'validation_dataset': tf_data_valid,
+                    'test_dataset': tf_data_test,
+                    'dropout_rate': dropout_rate,
+                    'input_size': num_features,
+                    'output_size': num_outputs,
+                    'hidden_layer_size': hidden_layer_size,
+                    'num_epochs': num_epochs,
+                    'minibatch_size': minibatch_size,
+                    'learning_rate': learning_rate,
+                    'max_norm': max_norm,
+                    'model_folder': model_folder,
+                    'hidden_activation': hidden_activation,
+                    'output_activation': output_activation,
+                    'backprop_length': 60,  # backprop over 60 timesteps for truncated backpropagation through time
+                    'softmax_size': 0, #not used in this paper, but allows for categorical actions
+                    'performance_metric': 'xentropy' if output_activation == 'sigmoid' else 'mse'}
+
+            # stpe1: construct model
+            tf.keras.backend.clear_session()
+            model = model_process.create_model(model_parameters)
+            model.summary()
+
+            # step2: train model
+            Train = model_process.TrainModule(model_parameters)
+            history = Train.train_model(model)
+            # history = model_process.train_model(model, model_parameters)
+            history = pd.DataFrame(history)
+
+            # step3: save model and history
+            model_process.save_model(model, model_parameters, history)
+
+            # step4: evaluate model using test data
+            _, mse = Train.evaluate_model(model)
+            mse_dict[net_name] = mse
+
+            # loop control and hyperparameter save
+            #hyperparam_count = len(hyperparam_opt.columns)
+            hyperparam_count += 1
             if hyperparam_count >= max_hyperparam_runs:
-                opt_params[net_name] = hyperparam_opt.T
                 break
 
         logging.info("Done")
-        logging.info(hyperparam_opt.T)
+        #logging.info(hyperparam_opt.T)
 
         # Flag optimal params
-    logging.info(opt_params)
+    #logging.info(opt_params)
+    return mse_dict

@@ -1,4 +1,4 @@
-"""
+﻿"""
 CODE ADAPTED FROM: https://github.com/sjblim/rmsn_nips_2018
 
 Implementation of Recurrent Marginal Structural Networks (R-MSNs):
@@ -11,6 +11,9 @@ from rmsn.configs import load_optimal_parameters
 
 import rmsn.core_routines as core
 from rmsn.core_routines import test
+
+import rmsn.libs.model_process as model_process
+import rmsn.libs.data_process as data_process
 
 import numpy as np
 import logging
@@ -29,27 +32,31 @@ def propensity_generation(dataset_map, MODEL_ROOT, b_use_predicted_confounders, 
 
     logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
-    action_inputs_only = load_optimal_parameters('treatment_rnn_action_inputs_only',
-                                                         expt_name, MODEL_ROOT,
-                                                         add_net_name=True)
-    action_w_trajectory_inputs = load_optimal_parameters('treatment_rnn',
-                                                                 expt_name, MODEL_ROOT,
-                                                                 add_net_name=True)
+    # Load the models（实际上，还是需要参数的）
+    action_inputs_only = model_process.load_optimal_parameters(net_name='treatment_rnn_action_inputs_only', MODEL_ROOT=MODEL_ROOT)
+    action_w_trajectory_inputs = model_process.load_optimal_parameters(net_name='treatment_rnn', MODEL_ROOT=MODEL_ROOT)
 
     # Generate propensity weights for validation data as well - used for MSM which is calibrated on train + valid data
     b_with_validation = False
-    # rango added 23.10.24
-    b_with_test = False
     # Generate non-stabilised IPTWs (default false)
     b_denominator_only = False
 
     # Setup tensorflow - setup session to use cpu/gpu
-    tf_device = 'cpu'
-    if tf_device == "cpu":
-        tf_config = tf.ConfigProto(log_device_placement=False, device_count={'GPU': 0})
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        try:
+            # set TensorFlow to use the first GPU
+            gpu0 = gpus[0]
+            tf.config.set_visible_devices([gpu0], 'GPU')
+            # set GPU memery growth
+            tf.config.experimental.set_memory_growth(gpu0, True)
+            logging.info("Using GPU with memory growth")
+        except RuntimeError as e:
+            # Changing device settings after the program is running may cause errors
+            logging.info(e)
     else:
-        tf_config= tf.ConfigProto(log_device_placement=False, device_count={'GPU': 1})
-        tf_config.gpu_options.allow_growth = True
+        # if no GPU，using CPU
+        logging.info("No GPU found, using CPU")
 
     # Config + activation functions
     activation_map = {'rnn_propensity_weighted': ("elu", 'linear'),
@@ -89,6 +96,7 @@ def propensity_generation(dataset_map, MODEL_ROOT, b_use_predicted_confounders, 
     def get_predictions(config):
 
         net_name = config[0]
+        serialisation_name = config[-1]
 
         hidden_activation, output_activation = activation_map[net_name]
 
@@ -110,6 +118,7 @@ def propensity_generation(dataset_map, MODEL_ROOT, b_use_predicted_confounders, 
         num_features = training_processed['scaled_inputs'].shape[-1]  # 4 if not b_use_actions_only else 3
         num_outputs = training_processed['scaled_outputs'].shape[-1]  # 1 if not b_predict_actions else 3  # 5
 
+
         # Unpack remaining variables
         dropout_rate = config[1]
         memory_multiplier = config[2] / num_features
@@ -117,23 +126,21 @@ def propensity_generation(dataset_map, MODEL_ROOT, b_use_predicted_confounders, 
         minibatch_size = config[4]
         learning_rate = config[5]
         max_norm = config[6]
-
-
+        tf_data_train = data_process.convert_to_tf_dataset(training_processed, minibatch_size)
+        tf_data_valid = data_process.convert_to_tf_dataset(validation_processed, minibatch_size)
 
         model_folder = os.path.join(MODEL_ROOT, net_name)
-        # rango added b_with_test condition
-        if b_with_test:
-            means, outputs, _, _ = test(training_processed, validation_processed, test_processed, tf_config,
-                                         net_name, expt_name, dropout_rate, num_features, num_outputs,
-                                         memory_multiplier, num_epochs, minibatch_size, learning_rate, max_norm,
-                                         hidden_activation, output_activation, model_folder)
-        else:
-            means, outputs, _, _ = test(training_processed, validation_processed, training_processed, tf_config,
-                                     net_name, expt_name, dropout_rate, num_features, num_outputs,
-                                     memory_multiplier, num_epochs, minibatch_size, learning_rate, max_norm,
-                                     hidden_activation, output_activation, model_folder)
+        model = model_process.load_model(model_folder, serialisation_name)
+
+        # predictition
+        outputs = training_processed['scaled_outputs']
+        predictions = model.predict(tf_data_train.map(lambda x: x['inputs']))
+        #means, outputs, _, _ = test(training_processed, validation_processed, training_processed, tf_config,
+        #                            net_name, expt_name, dropout_rate, num_features, num_outputs,
+        #                            memory_multiplier, num_epochs, minibatch_size, learning_rate, max_norm,
+        #                            hidden_activation, output_activation, model_folder)
        
-        return means, outputs
+        return predictions, outputs
 
     def get_weights(probs, targets):
         w = probs*targets + (1-probs) * (1-targets)
@@ -196,5 +203,6 @@ def propensity_generation(dataset_map, MODEL_ROOT, b_use_predicted_confounders, 
         save_file = os.path.join(MODEL_ROOT, "propensity_scores{}".format(suffix))
 
     np.save(save_file, propensity_weights)
+    logging.info("Propensity scores saved to {}".format(save_file))
 
 

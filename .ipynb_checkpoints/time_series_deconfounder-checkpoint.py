@@ -143,6 +143,7 @@ def get_dataset_normalize(dataset, scale_params, num_covariates, num_treatments)
 
     return dataset
 
+# 感觉这个名字应该要换，因为不只是在做数据集的划分
 def get_dataset_splits(dataset, train_index, val_index, test_index, use_predicted_confounders):
     if use_predicted_confounders:
         dataset_keys = ['previous_covariates', 'previous_treatments', 'covariates', 'treatments',
@@ -150,6 +151,12 @@ def get_dataset_splits(dataset, train_index, val_index, test_index, use_predicte
     else:
         dataset_keys = ['previous_covariates', 'previous_treatments', 'covariates', 'treatments', 'outcomes']
 
+    # data type transformation
+    for key in dataset.keys():
+        if key!='sequence_length':
+            dataset[key] = dataset[key].astype(np.float32)
+
+    # dataset split
     dataset_train = dict()
     dataset_val = dict()
     dataset_test = dict()
@@ -198,29 +205,29 @@ def train_rmsn(dataset_map, model_name, b_use_predicted_confounders):
         os.mkdir(MODEL_ROOT)
         print("Directory ", MODEL_ROOT, " Created ")
 
-    rnn_fit(dataset_map=dataset_map, networks_to_train='propensity_networks', MODEL_ROOT=MODEL_ROOT,
+    _ = rnn_fit(dataset_map=dataset_map, networks_to_train='propensity_networks', MODEL_ROOT=MODEL_ROOT,
             b_use_predicted_confounders=b_use_predicted_confounders)
 
     propensity_generation(dataset_map=dataset_map, MODEL_ROOT=MODEL_ROOT,
-                          b_use_predicted_confounders=b_use_predicted_confounders)
+                           b_use_predicted_confounders=b_use_predicted_confounders)
 
-    rnn_fit(networks_to_train='encoder', dataset_map=dataset_map, MODEL_ROOT=MODEL_ROOT,
+    rmsn_mse = rnn_fit(networks_to_train='encoder', dataset_map=dataset_map, MODEL_ROOT=MODEL_ROOT,
             b_use_predicted_confounders=b_use_predicted_confounders)
 
-    rmsn_mse = rnn_test(dataset_map=dataset_map, MODEL_ROOT=MODEL_ROOT,
-                        b_use_predicted_confounders=b_use_predicted_confounders)
+    # rmsn_mse = rnn_test(dataset_map=dataset_map, MODEL_ROOT=MODEL_ROOT,
+    #                     b_use_predicted_confounders=b_use_predicted_confounders)
 
-    rmse = np.sqrt(np.mean(rmsn_mse)) * 100
-    return rmse
+#     rmse = np.sqrt(np.mean(rmsn_mse)) * 100
+    return rmsn_mse[list(rmsn_mse)[0]]
 
-def predict_effects(dataset, model_name, calculate_counterfactual, b_use_predicted_confounders):
+def predict_effects(predict_data, model_name, calculate_counterfactual, b_use_predicted_confounders, treatment_index=None):
     model_name = model_name + '_use_confounders_' + str(b_use_predicted_confounders)
     MODEL_ROOT = os.path.join('results', model_name)
 
     # modify the interested treatment in dataset_map to 0 
     if calculate_counterfactual:
-        dataset['treatments'][:, :, 1:] = 0
-    
+        predict_data['treatments'][:, :, treatment_index] = 0
+        
     # dataset['covariates'] = dataset['covariates'][:,5:,:]
     # dataset['treatments'] = dataset['treatments'][:,5:,:]
     # dataset['predicted_confounders'] = dataset['predicted_confounders'][:,5:,:]
@@ -228,114 +235,139 @@ def predict_effects(dataset, model_name, calculate_counterfactual, b_use_predict
     # dataset['sequence_length']-=5
     
     # data preprocessing - normalization
-    num_samples, length, num_covariates = dataset['covariates'].shape
-    _, _, num_treatments = dataset['treatments'].shape
+    num_samples, length, num_covariates = predict_data['covariates'].shape
+    _, _, num_treatments = predict_data['treatments'].shape
 
-    scale_params = get_normalize_params(dataset, num_covariates, num_treatments) 
-    dataset['output_means'] = scale_params['outcomes'][:, 0]
-    dataset['output_stds'] = scale_params['outcomes'][:, 1]
+    scale_params = get_normalize_params(predict_data, num_covariates, num_treatments) 
+    predict_data['output_means'] = scale_params['outcomes'][:, 0]
+    predict_data['output_stds'] = scale_params['outcomes'][:, 1]
 
-    dataset = get_dataset_normalize(dataset, scale_params, num_covariates, num_treatments)
+    predict_data = get_dataset_normalize(predict_data, scale_params, num_covariates, num_treatments)
     
     # propensity_generation(dataset_map=dataset, MODEL_ROOT=MODEL_ROOT,
     #                       b_use_predicted_confounders=b_use_predicted_confounders, b_use_all_data=True)
     
-    means, ub, lb, labels, observations = \
-        rnn_predict(dataset=dataset, MODEL_ROOT=MODEL_ROOT,
+    predictions, observations = \
+        rnn_predict(dataset=predict_data, MODEL_ROOT=MODEL_ROOT,
                     b_use_predicted_confounders=b_use_predicted_confounders)
-    
+
+    results = dict()
+    results['predictions'] = predictions
+    results['observations'] = observations
+
+    return results
+
+
+def compute_ale(dataset, model_name, b_use_predicted_confounders, features):
     # compute accumulated local effects (ALE)
-    config = {'covariate_cols':['gender','age','income3','weekday_0','weekday_1','weekday_2','weekday_3',\
-                          'weekday_4', 'weekday_5', 'weekday_6','sprtransp','spring','precip', 'voluntary'],
-              'treatment_cols':['conformity','restrict','open'],
+    model_name = model_name + '_use_confounders_' + str(b_use_predicted_confounders)
+    model_root = os.path.join('results', model_name)
+    config = {'covariate_cols':['gender','age','income','weekday_0','weekday_1','weekday_2','weekday_3','weekday_4', 'weekday_5', 'weekday_6',
+                  'voluntary','festivals','year_0','year_1','year_2','density','landusemix','road_density','center','subway','edu',
+                  'married','dist_yes','temperature','percipit'],
+              'treatment_cols':['conformity','E1','E2'],
               'confounder_cols':['confounder_{}'.format(i) for i in range(dataset['predicted_confounders'].shape[2])]}
+    # config = {'covariate_cols':['gender','age','income3','weekday_0','weekday_1','weekday_2','weekday_3',\
+    #                       'weekday_4', 'weekday_5', 'weekday_6','sprtransp','spring','precip', 'voluntary'],
+    #           'treatment_cols':['conformity','restrict','open'],
+    #           'confounder_cols':['confounder_{}'.format(i) for i in range(dataset['predicted_confounders'].shape[2])]}
+    
+    # shape of data
+    num_samples, length, num_covariates = dataset['covariates'].shape
+    _, _, num_treatments = dataset['treatments'].shape
+    # 先计算标准化的参数
+    scale_params = get_normalize_params(dataset, num_covariates, num_treatments) 
+    dataset['output_means'] = scale_params['outcomes'][:, 0]
+    dataset['output_stds'] = scale_params['outcomes'][:, 1]
+    
+    # construct dataframe
+    all_data = np.concatenate((dataset['covariates'].reshape(-1, len(config['covariate_cols'])), \
+        dataset['treatments'].reshape(-1, len(config['treatment_cols']))), axis=1)
+    all_data = np.concatenate((all_data, dataset['predicted_confounders'].reshape(-1, len(config['confounder_cols']))), axis=1)
+    all_cols = config['covariate_cols'] + config['treatment_cols'] + config['confounder_cols']
+
+    X = pd.DataFrame(all_data, columns=all_cols)
+    # add timeline and week column
+    X['timeline'] = np.tile(np.arange(length), num_samples)
+    # start_date = pd.Timestamp('2020-01-01')
+    # X['week'] = X['timeline'].apply(lambda x: start_date + pd.Timedelta(days=x)).dt.week - 1
+    # 20年的数据是从2019.12.21开始的，直接按7天编码
+    start_date = pd.Timestamp('2019-12-21')
+    X['date'] = X['timeline'].apply(lambda x: start_date + pd.Timedelta(days=x))
+    using_policy_period = True
+    if using_policy_period:
+        # 按政策时期分类
+        # Define the dates to categorize
+        categorization_dates = pd.to_datetime(
+            ['2020-01-19','2020-01-23', '2020-02-07', '2020-02-10', '2020-02-17', '2020-02-23', '2020-03-21', '2020-03-29', '2020-05-09']
+        )
+        # Function to categorize dates
+        def categorize_date(row_date):
+            for i, cat_date in enumerate(categorization_dates):
+                if row_date < cat_date:
+                    return i
+            return len(categorization_dates)
+        X['week'] = X['date'].apply(categorize_date)
+    else:
+         X['week'] = ((X['date'] - start_date).dt.days / 7).astype(int)
+    
+    # # 确保周编号在年末时正确地重置
+    # X['year'] = X['timeline'].apply(lambda x: start_date + pd.Timedelta(days=x)).dt.year
+    # X['week'] = X.apply(lambda row: row['week'] + 52* (row['year'] - 2020), axis=1) # mistake
 
     ##############################################################################################################
-    # Functions
-    def compute_ale(config, features):
-        # construct dataframe
-        all_data = np.concatenate((dataset['covariates'].reshape(-1, len(config['covariate_cols'])), \
-            dataset['treatments'].reshape(-1, len(config['treatment_cols']))), axis=1)
-        all_data = np.concatenate((all_data, dataset['predicted_confounders'].reshape(-1, len(config['confounder_cols']))), axis=1)
-        all_cols = config['covariate_cols'] + config['treatment_cols'] + config['confounder_cols']
-        
-        X = pd.DataFrame(all_data, columns=all_cols)
-        # add timeline and week column
-        X['timeline'] = np.tile(np.arange(length), num_samples)
-        start_date = pd.Timestamp('2019-01-01')
-        X['week'] = X['timeline'].apply(lambda x: start_date + pd.Timedelta(days=x)).dt.week - 1
-        # start_date = pd.Timestamp('2020-01-06')
-        # X['week'] = X['timeline'].apply(lambda x: start_date + pd.Timedelta(days=x)).dt.week - 2 # 从第二周开始
-
-        # define predictor
-        predictor = lambda x: ale_use_predict(x, dataset, config, MODEL_ROOT, b_use_predicted_confounders)
-        
-        # Plots ALE function of specified features based on training set.
-        # if len(features)==1:
-        #     ale_fig, ale_ax = ale_plot(
-        #                 None, 
-        #                 X,
-        #                 features,
-        #                 bins=20,
-        #                 predictor=predictor,
-        #                 monte_carlo=True,
-        #                 monte_carlo_rep=100,
-        #                 monte_carlo_ratio=0.6,)
-        # else:
-        ale_fig, ale_ax, ale = ale_plot(
-                    None, 
-                    X,
-                    features,
-                    bins=20,
-                    predictor=predictor,)
-
-        return ale_fig, ale
-
-    def ale_use_predict(X, dataset, config, model_root, b_use_predicted_confounders):
+    def ale_use_predict(X, dataset, config, model_root, scale_params, b_use_predicted_confounders):
         # change data
         mod_dataset = dataset.copy()
+        # 将修改完的值添加到mod_dataset
         covariate_shapes = dataset['covariates'].shape
         mod_dataset['covariates'] = X[config['covariate_cols']].values.reshape(covariate_shapes[0],covariate_shapes[1],covariate_shapes[2])
         treatment_shapes = dataset['treatments'].shape
         mod_dataset['treatments'] = X[config['treatment_cols']].values.reshape(treatment_shapes[0],treatment_shapes[1],treatment_shapes[2])
-
-        means, _, _, _, _ = \
+        
+        # 使用原来的参数做标准化
+        mod_dataset = get_dataset_normalize(mod_dataset, scale_params, num_covariates, num_treatments)
+        # 调用函数预测
+        predictions, _ = \
         rnn_predict(dataset=mod_dataset, MODEL_ROOT=model_root,
                     b_use_predicted_confounders=b_use_predicted_confounders)
-        outputs = means.reshape(-1)
+        outputs = predictions.reshape(-1)
         return outputs
     ##############################################################################################################
+    
+    # define predictor
+    predictor = lambda x: ale_use_predict(x, dataset, config, model_root, scale_params, b_use_predicted_confounders)
 
-    # plot ale
-    # logging.info('Compute Accumulated Local Effects (ALE), draw and save the ale plot')
-    #ale_fig, ale = compute_ale(config, ['conformity'])
-    #print(ale)
-    # ale_fig, ale = compute_ale(config, ['week', 'conformity'])
-    # ale_fig, ale = compute_ale(config, ['timeline', 'conformity'])
-    #print(ale)
-    #ale_fig, ale = compute_ale(config, ['voluntary', 'conformity'])
-    #print(ale)
-    #save fig
-    # ale_fig.savefig('results/img/conformity_time_ale_2019.png')
+    # Plots ALE function of specified features based on training set.
+    # if len(features)==1:
+    #     ale_fig, ale_ax = ale_plot(
+    #                 None, 
+    #                 X,
+    #                 features,
+    #                 bins=20,
+    #                 predictor=predictor,
+    #                 monte_carlo=True,
+    #                 monte_carlo_rep=100,
+    #                 monte_carlo_ratio=0.6,)
+    # else:
+    ale_fig, ale_ax, ale = ale_plot(
+                None, 
+                X,
+                features,
+                bins=20,
+                predictor=predictor,)
 
-    results = dict()
-    results['means'] = means
-    results['upper_bounds'] = ub
-    results['lower_bounds'] = lb
-    results['labels'] = labels
-    results['observations'] = observations
-
-    return results
+    return ale_fig, ale
 
 def test_time_series_deconfounder(dataset, num_substitute_confounders, exp_name, dataset_with_confounders_filename,
                                   factor_model_hyperparams_file, model_prediction_file, b_hyperparm_tuning=False):
     logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
-#     shuffle_split = ShuffleSplit(n_splits=1, test_size=0.1, random_state=10)
-#     train_index, test_index = next(shuffle_split.split(dataset['covariates'][:, :, 0]))
-#     shuffle_split = ShuffleSplit(n_splits=1, test_size=0.11, random_state=10)
-#     train_index, val_index = next(shuffle_split.split(dataset['covariates'][train_index, :, 0]))
-#     dataset_map = get_dataset_splits(dataset, train_index, val_index, test_index, use_predicted_confounders=False)
+    # shuffle_split = ShuffleSplit(n_splits=1, test_size=0.1, random_state=10)
+    # train_index, test_index = next(shuffle_split.split(dataset['covariates'][:, :, 0]))
+    # shuffle_split = ShuffleSplit(n_splits=1, test_size=0.11, random_state=10)
+    # train_index, val_index = next(shuffle_split.split(dataset['covariates'][train_index, :, 0]))
+    # dataset_map = get_dataset_splits(dataset, train_index, val_index, test_index, use_predicted_confounders=False)
 
 #     dataset_train = dataset_map['training_data']
 #     dataset_val = dataset_map['validation_data']
@@ -350,24 +382,44 @@ def test_time_series_deconfounder(dataset, num_substitute_confounders, exp_name,
 #     dataset['predicted_confounders'] = predicted_confounders
 #     write_results_to_file(dataset_with_confounders_filename, dataset)
 
-#     dataset_map = get_dataset_splits(dataset, train_index, val_index, test_index, use_predicted_confounders=True)
+    # dataset_map = get_dataset_splits(dataset, train_index, val_index, test_index, use_predicted_confounders=True)
 
-#     logging.info('Fitting counfounded recurrent marginal structural networks.')
-#     rmse_without_confounders = train_rmsn(dataset_map, 'rmsn_' + str(exp_name), b_use_predicted_confounders=False)
+    # logging.info('Fitting counfounded recurrent marginal structural networks.')
+    # rmse_without_confounders = train_rmsn(dataset_map, 'rmsn_' + str(exp_name), b_use_predicted_confounders=False)
 
-#     logging.info(
-#         'Fitting deconfounded (D_Z = {}) recurrent marginal structural networks.'.format(num_substitute_confounders))
-#     rmse_with_confounders = train_rmsn(dataset_map, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True)
+    # logging.info(
+    #     'Fitting deconfounded (D_Z = {}) recurrent marginal structural networks.'.format(num_substitute_confounders))
+    # rmse_with_confounders = train_rmsn(dataset_map, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True)
 
-#     print("Outcome model RMSE when trained WITHOUT the hidden confounders.")
-#     print(rmse_without_confounders)
+    # print("Outcome model RMSE when trained WITHOUT the hidden confounders.")
+    # print(rmse_without_confounders)
 
-#     print("Outcome model RMSE when trained WITH the substitutes for the hidden confounders.")
-#     print(rmse_with_confounders)
+    # print("Outcome model RMSE when trained WITH the substitutes for the hidden confounders.")
+    # print(rmse_with_confounders)
     
-    logging.info('Predicting treatment effects of conformity factor.')
-    results = predict_effects(dataset, 'rmsn_' + str(exp_name), calculate_counterfactual=False, b_use_predicted_confounders=True)
-    #potential_results = predict_effects(dataset_map, 'rmsn_' + str(exp_name), calculate_counterfactual=True, b_use_predicted_confounders=True)
-    #results['diff'] = results['means']- potential_results['means']
-    #results['potential_means'] = potential_results['means']
-    write_results_to_file(model_prediction_file, results)
+    # logging.info('Predicting treatment effects of conformity factor.')
+    # results = predict_effects(dataset, 'rmsn_' + str(exp_name), calculate_counterfactual=False, b_use_predicted_confounders=False)
+    # potential_results = predict_effects(dataset_map, 'rmsn_' + str(exp_name), calculate_counterfactual=True, b_use_predicted_confounders=True)
+    # write_results_to_file(model_prediction_file, results)
+    # logging.info("Successfully saved predictions. Finished.")
+    
+    # plot ale
+    # using only 2019 data
+    column_index = 12  # index of year 2020 indicator
+    selected_indices = np.where((dataset['covariates'][:, :, 0] == 1)&\
+                                (dataset['covariates'][:, :, column_index] == 1))[0]
+    unique_selected_indices = np.unique(selected_indices)
+    for key in dataset.keys():
+        dataset[key] = dataset[key][unique_selected_indices]
+        
+    logging.info('Compute Single Accumulated Local Effects (ALE), draw and save the ale plot')
+    single_ale_fig, ale = compute_ale(dataset, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True, features=['conformity'])
+    single_ale_fig.savefig('results/image/sample_1w_conformity_ale_2019_male.png')
+
+    # logging.info('Compute Time Windows Accumulated Local Effects (ALE), draw and save the ale plot')
+    # window_ale_fig, ale = compute_ale(dataset, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True, features=['week', 'conformity'])
+    # window_ale_fig.savefig('results/image/sample_1w_conformity_policy_ale.png')
+
+    # logging.info('Compute Interactive Accumulated Local Effects (ALE), draw and save the ale plot')
+    # interact_ale_fig, ale = compute_ale(dataset, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True, features=['conformity','voluntary'])
+    # interact_ale_fig.savefig('results/image/sample_1w_conformity_case_ale.png')

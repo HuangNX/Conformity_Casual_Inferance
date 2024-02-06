@@ -25,5 +25,18 @@ python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_10000_log
 -- 使用2019年做对比的ALE
 python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_10000_log_gamma_0.6'  --results_dir='results/real_data_results3' --data_filename='data/sample5000_log_for_predict_2019.txt' --num_substitute_hidden_confounders=1
 
-分箱：
-0.0 1173.652 2942.316 5842.279 10852.704 36933.88
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='try'  --results_dir='results/model_results' --data_filename='../sample5000_log_for_predict.txt' --num_substitute_hidden_confounders=1
+
+tf_upgrade_v2 \
+    --intree Conformity_Casual_Inferance \
+    --outtree regression_v2/ \
+    --reportfile tree_report.txt
+    
+-- tf2 try
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='tf2_test'  --results_dir='results' --data_filename='../fullfeature_fillmean_1000.txt' --num_substitute_hidden_confounders=1
+
+-- tf2 try 1w samples
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='samples_1w_with_confounders'  --results_dir='results' --data_filename='../fillmean_10000_gamma_0.6_dataset_with_substitute_confounders.txt' --num_substitute_hidden_confounders=1
+
+-- tf2 try 2w samples
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='samples_2w_with_confounders'  --results_dir='results' --data_filename='../sample_2w_dataset_with_substitute_confounders.txt' --num_substitute_hidden_confounders=1
