@@ -41,9 +41,9 @@ def rnn_predict(dataset, MODEL_ROOT, b_use_predicted_confounders, b_use_oracle_c
     # Setup tensorflow
     tf_device = 'gpu'
     if tf_device == "cpu":
-        tf_config = tf.ConfigProto(log_device_placement=False, device_count={'GPU': 0})
+        tf_config = tf.compat.v1.ConfigProto(log_device_placement=False, device_count={'GPU': 0})
     else:
-        tf_config = tf.ConfigProto(log_device_placement=False, device_count={'GPU': 1})
+        tf_config = tf.compat.v1.ConfigProto(log_device_placement=False, device_count={'GPU': 1})
         tf_config.gpu_options.allow_growth = True
 
     configs = [
@@ -107,9 +107,7 @@ def rnn_predict(dataset, MODEL_ROOT, b_use_predicted_confounders, b_use_oracle_c
                    hidden_activation, output_activation, model_folder,
                    b_use_state_initialisation=False, b_dump_all_states=True)
         
-        # Attach conformity class
-        labels = dataset['treatments'][:,:,0:5]
         #observations = dataset['outcomes']*dataset['output_stds']+dataset['output_means']
         observations = dataset_processed['outputs']
 
-    return means, ub, lb, labels, observations
+    return means, ub, lb, observations

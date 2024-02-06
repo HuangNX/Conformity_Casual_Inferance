@@ -26,11 +26,11 @@ def linear(input_, output_size, scope=None, bias_start=0.0, with_w=False):
 
     shape = input_.get_shape().as_list()
 
-    with tf.variable_scope(scope or "Linear", reuse=tf.AUTO_REUSE) as cur_scope:
-        matrix = tf.get_variable("Matrix", [shape[-1], output_size], tf.float32,
-                                 tf.contrib.layers.xavier_initializer())
-        bias = tf.get_variable("bias", [output_size],
-                               initializer=tf.constant_initializer(bias_start))
+    with tf.compat.v1.variable_scope(scope or "Linear", reuse=tf.compat.v1.AUTO_REUSE) as cur_scope:
+        matrix = tf.compat.v1.get_variable("Matrix", [shape[-1], output_size], tf.float32,
+                                 tf.compat.v1.keras.initializers.VarianceScaling(scale=1.0, mode="fan_avg", distribution="uniform"))
+        bias = tf.compat.v1.get_variable("bias", [output_size],
+                               initializer=tf.compat.v1.constant_initializer(bias_start))
 
         if with_w:
             return tf.matmul(input_, matrix) + bias, matrix, bias
@@ -60,13 +60,13 @@ def randomise_minibatch_index(Y, minibatch_size):
     return tmp
 
 def get_optimization_graph(loss, learning_rate, max_global_norm, global_step,
-                           optimisation_function=tf.train.AdamOptimizer):
+                           optimisation_function=tf.compat.v1.train.AdamOptimizer):
     # Optimisation step
 
     optimizer = optimisation_function(learning_rate)
 
     # Clip gradients to prevent them from blowing up
-    trainables = tf.trainable_variables()
+    trainables = tf.compat.v1.trainable_variables()
     grads = tf.gradients(loss, trainables)
     #grads, _ = tf.clip_by_global_norm(grads, clip_norm=max_global_norm)
     grad_var_pairs = zip(grads, trainables)
@@ -80,8 +80,8 @@ def get_optimization_graph(loss, learning_rate, max_global_norm, global_step,
 
 def calc_binary_cross_entropy(probs, outputs, weights=1):
 
-    return -tf.reduce_mean((outputs * tf.log(probs +1e-8)
-             + (1-outputs)* tf.log(1-probs +1e-8)) * weights)
+    return -tf.reduce_mean((outputs * tf.math.log(probs +1e-8)
+             + (1-outputs)* tf.math.log(1-probs +1e-8)) * weights)
 
 def last_relevant_time_slice(output, sequence_length):
 
@@ -144,7 +144,7 @@ Serialisation
 def save_network(tf_session, model_folder, cp_name, optimisation_summary):
 
     # Save model
-    saver = tf.train.Saver(max_to_keep=100000)
+    saver = tf.compat.v1.train.Saver(max_to_keep=100000)
     save_path = saver.save(tf_session, os.path.join(model_folder, "{0}.ckpt".format(cp_name)))
     # Save opt summary
     opt_summary_path = os.path.join(model_folder, "{0}_optsummary.csv".format(cp_name))
@@ -156,10 +156,10 @@ def load_network(tf_session, model_folder, cp_name):
     # Load model proper
     load_path = os.path.join(model_folder, "{0}.ckpt".format(cp_name))
 
-    initial_vars = set([v.name for v in tf.get_default_graph().as_graph_def().node])
-    saver = tf.train.Saver()
+    initial_vars = set([v.name for v in tf.compat.v1.get_default_graph().as_graph_def().node])
+    saver = tf.compat.v1.train.Saver()
     saver.restore(tf_session, load_path)
-    all_vars = set([v.name for v in tf.get_default_graph().as_graph_def().node])
+    all_vars = set([v.name for v in tf.compat.v1.get_default_graph().as_graph_def().node])
 
     # Load optimisation summary
     opt_summary_path = os.path.join(model_folder, "{0}_optsummary.csv".format(cp_name))

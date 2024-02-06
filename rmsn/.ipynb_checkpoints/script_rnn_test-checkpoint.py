@@ -43,9 +43,9 @@ def rnn_test(dataset_map, MODEL_ROOT, b_use_predicted_confounders, b_use_oracle_
     # Setup tensorflow
     tf_device = 'gpu'
     if tf_device == "cpu":
-        tf_config = tf.ConfigProto(log_device_placement=False, device_count={'GPU': 0})
+        tf_config = tf.compat.v1.ConfigProto(log_device_placement=False, device_count={'GPU': 0})
     else:
-        tf_config = tf.ConfigProto(log_device_placement=False, device_count={'GPU': 1})
+        tf_config = tf.compat.v1.ConfigProto(log_device_placement=False, device_count={'GPU': 1})
         tf_config.gpu_options.allow_growth = True
 
     # change 'rnn_propensity_weighted' to 'treatment_rnn'

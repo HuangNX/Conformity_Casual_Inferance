@@ -1,4 +1,4 @@
-"""
+﻿"""
 CODE ADAPTED FROM: https://github.com/sjblim/rmsn_nips_2018
 
 Implementation of Recurrent Marginal Structural Networks (R-MSNs):
@@ -12,8 +12,8 @@ from rmsn.configs import load_optimal_parameters
 from rmsn.core_routines import test
 import rmsn.core_routines as core
 
-from rmsn.libs.model_rnn import RnnModel
-import rmsn.libs.net_helpers as helpers
+import rmsn.libs.model_process as model_process
+import rmsn.libs.data_process as data_process
 
 from sklearn.metrics import roc_auc_score, average_precision_score
 
@@ -35,24 +35,31 @@ logging.getLogger().setLevel(logging.INFO)
 expt_name = "treatment_effects"
 
 
-
+# return mse
 def rnn_test(dataset_map, MODEL_ROOT, b_use_predicted_confounders, b_use_oracle_confounders=False,
              b_remove_x1=False):
     logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
     # Setup tensorflow
-    tf_device = 'gpu'
-    if tf_device == "cpu":
-        tf_config = tf.ConfigProto(log_device_placement=False, device_count={'GPU': 0})
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        try:
+            # set TensorFlow to use the first GPU
+            gpu0 = gpus[0]
+            tf.config.set_visible_devices([gpu0], 'GPU')
+            # set GPU memery growth
+            tf.config.experimental.set_memory_growth(gpu0, True)
+            logging.info("Using GPU with memory growth")
+        except RuntimeError as e:
+            # Changing device settings after the program is running may cause errors
+            logging.info(e)
     else:
-        tf_config = tf.ConfigProto(log_device_placement=False, device_count={'GPU': 1})
-        tf_config.gpu_options.allow_growth = True
+        # if no GPU，using CPU
+        logging.info("No GPU found, using CPU")
 
     # change 'rnn_propensity_weighted' to 'treatment_rnn'
     configs = [
-        load_optimal_parameters('rnn_propensity_weighted',
-                                expt_name, MODEL_ROOT,
-                                add_net_name=True)
+        model_process.load_optimal_parameters(net_name = 'rnn_propensity_weighted',MODEL_ROOT = MODEL_ROOT)
     ]
 
     # Config
@@ -68,6 +75,7 @@ def rnn_test(dataset_map, MODEL_ROOT, b_use_predicted_confounders, b_use_oracle_
     mse_by_followup = {}
     for config in configs:
         net_name = config[0]
+        serialisation_name = config[-1]
 
         projection_map[net_name] = {}
 
@@ -84,13 +92,13 @@ def rnn_test(dataset_map, MODEL_ROOT, b_use_predicted_confounders, b_use_oracle_
 
         # In[*]: Compute base MSEs
         # Extract only relevant trajs and shift data
-        training_processed = core.get_processed_data(training_data, b_predict_actions,
+        training_processed = data_process.get_processed_data(training_data, b_predict_actions,
                                                      b_use_actions_only,
                                                      b_use_predicted_confounders, b_use_oracle_confounders, b_remove_x1)
-        validation_processed = core.get_processed_data(validation_data, b_predict_actions,
+        validation_processed = dataset_map.get_processed_data(validation_data, b_predict_actions,
                                                        b_use_actions_only, b_use_predicted_confounders,
                                                        b_use_oracle_confounders, b_remove_x1)
-        test_processed = core.get_processed_data(test_data, b_predict_actions,
+        test_processed = data_process.get_processed_data(test_data, b_predict_actions,
                                                  b_use_actions_only, b_use_predicted_confounders,
                                                  b_use_oracle_confounders, b_remove_x1)
 
@@ -110,23 +118,25 @@ def rnn_test(dataset_map, MODEL_ROOT, b_use_predicted_confounders, b_use_oracle_
 
         # Run tests
         model_folder = os.path.join(MODEL_ROOT, net_name)
+        model = model_process.load_model(model_folder, serialisation_name)
 
-        means, output, mse, test_states \
-            = test(training_processed, validation_processed, test_processed, tf_config,
-                   net_name, expt_name, dropout_rate, num_features, num_outputs,
-                   memory_multiplier, num_epochs, minibatch_size, learning_rate, max_norm,
-                   hidden_activation, output_activation, model_folder,
-                   b_use_state_initialisation=False, b_dump_all_states=True)
+        #means, output, mse, test_states \
+        #    = test(training_processed, validation_processed, test_processed, tf_config,
+        #           net_name, expt_name, dropout_rate, num_features, num_outputs,
+        #           memory_multiplier, num_epochs, minibatch_size, learning_rate, max_norm,
+        #           hidden_activation, output_activation, model_folder,
+        #           b_use_state_initialisation=False, b_dump_all_states=True)
 
-        active_entries = test_processed['active_entries']
+        #active_entries = test_processed['active_entries']
 
-        def get_mse_at_follow_up_time(mean, output, active_entires):
-            mses = np.sum(np.sum((mean - output) ** 2 * active_entires, axis=-1), axis=0) \
-                   / active_entires.sum(axis=0).sum(axis=-1)
+        #def get_mse_at_follow_up_time(mean, output, active_entires):
+        #    mses = np.sum(np.sum((mean - output) ** 2 * active_entires, axis=-1), axis=0) \
+        #           / active_entires.sum(axis=0).sum(axis=-1)
 
-            return pd.Series(mses, index=[idx for idx in range(len(mses))], name=net_name)
+        #    return pd.Series(mses, index=[idx for idx in range(len(mses))], name=net_name)
 
-        mse = get_mse_at_follow_up_time(means, output, active_entries)
+        #mse = get_mse_at_follow_up_time(means, output, active_entries)
+
         projection_map[net_name] = mse
         mse.to_csv(os.path.join(MODEL_ROOT, "results_mse.csv"))
         # save mean estimation

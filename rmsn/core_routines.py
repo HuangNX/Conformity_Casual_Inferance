@@ -22,9 +22,7 @@ import pickle
 
 # NAN debugging
 from tensorflow.python import debug as tf_debug
-
 ROOT_FOLDER = rmsn.configs.ROOT_FOLDER
-
 
 #--------------------------------------------------------------------------
 # Training routine
@@ -59,8 +57,8 @@ def train(net_name,
 
     min_epochs = 1
 
-    tf.reset_default_graph()
-    with tf.Graph().as_default(), tf.Session(config=tf_config) as sess:
+    tf.compat.v1.reset_default_graph()
+    with tf.Graph().as_default(), tf.compat.v1.Session(config=tf_config) as sess:
         
         # rango added - tensorflow debugger 2023.10.20###################
         # sess = tf_debug.LocalCLIDebugWrapperSession(sess)
@@ -130,7 +128,7 @@ def train(net_name,
         min_loss = np.inf
         with sess.as_default():
 
-            sess.run(tf.global_variables_initializer())
+            sess.run(tf.compat.v1.global_variables_initializer())
 
             optimisation_summary = pd.Series([])
 
@@ -284,9 +282,9 @@ def test(training_dataset,
     """
 
     # Start with graph
-    tf.reset_default_graph()
+    tf.compat.v1.reset_default_graph()
 
-    with tf.Session(config=tf_config) as sess:
+    with tf.compat.v1.Session(config=tf_config) as sess:
         tf_data_train = convert_to_tf_dataset(training_dataset)
         tf_data_valid = convert_to_tf_dataset(validation_dataset)
         tf_data_test = convert_to_tf_dataset(test_dataset)
@@ -330,7 +328,7 @@ def test(training_dataset,
         # Start optimising
         with sess.as_default():
 
-            sess.run(tf.global_variables_initializer())
+            sess.run(tf.compat.v1.global_variables_initializer())
 
             # Get the right model
             model = RnnModel(model_parameters)
@@ -441,9 +439,9 @@ def predict(dataset,
     """
 
     # Start with graph
-    tf.reset_default_graph()
+    tf.compat.v1.reset_default_graph()
 
-    with tf.Session(config=tf_config) as sess:
+    with tf.compat.v1.Session(config=tf_config) as sess:
         tf_dataset = convert_to_tf_dataset(dataset)
 
         # For decoder training with external state inputs
@@ -483,7 +481,7 @@ def predict(dataset,
         # Start optimising
         with sess.as_default():
 
-            sess.run(tf.global_variables_initializer())
+            sess.run(tf.compat.v1.global_variables_initializer())
 
             # Get the right model
             model = RnnModel(model_parameters)
