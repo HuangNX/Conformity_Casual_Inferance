@@ -52,7 +52,7 @@ def get_processed_data(raw_sim_data,
         else:
             # Uses current covariate, to remove confounding effects between action and current value
             if (b_use_predicted_confounders):
-                print ("Using predicted confounders")
+                #print ("Using predicted confounders")
                 inputs = np.concatenate([covariates[:, 1:, ], predicted_confounders[:, 1:, ], treatments[:, :-1, ]],
                                         axis=2)
             else:
@@ -116,7 +116,7 @@ def get_processed_data(raw_sim_data,
             }
 
 
-def convert_to_tf_dataset(dataset_map, minibatch_size):
+def convert_to_tf_dataset(dataset_map, minibatch_size, for_train = True):
     key_map = {'inputs': dataset_map['scaled_inputs'],
                'outputs': dataset_map['scaled_outputs'],
                'active_entries': dataset_map['active_entries'],
@@ -128,8 +128,12 @@ def convert_to_tf_dataset(dataset_map, minibatch_size):
     if 'initial_states' in dataset_map:
         key_map['initial_states'] = dataset_map['initial_states']
 
-    tf_dataset = tf.data.Dataset.from_tensor_slices(key_map)\
-                .shuffle(buffer_size = 1000).batch(minibatch_size) \
-                .prefetch(tf.data.experimental.AUTOTUNE)
+    if for_train:
+        tf_dataset = tf.data.Dataset.from_tensor_slices(key_map)\
+                    .shuffle(buffer_size = 1000).batch(minibatch_size) \
+                    .prefetch(tf.data.experimental.AUTOTUNE)
+    else:
+        tf_dataset = tf.data.Dataset.from_tensor_slices(key_map)\
+                    .batch(minibatch_size).prefetch(tf.data.experimental.AUTOTUNE)
 
     return tf_dataset

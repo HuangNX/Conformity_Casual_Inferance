@@ -45,11 +45,11 @@ def propensity_generation(dataset_map, MODEL_ROOT, b_use_predicted_confounders, 
     gpus = tf.config.list_physical_devices('GPU')
     if gpus:
         try:
-            # set TensorFlow to use the first GPU
-            gpu0 = gpus[0]
-            tf.config.set_visible_devices([gpu0], 'GPU')
-            # set GPU memery growth
-            tf.config.experimental.set_memory_growth(gpu0, True)
+            # set TensorFlow to use all GPU
+            for gpu in gpus:
+                tf.config.set_visible_devices(gpu, 'GPU')
+                # set GPU memery growth
+                tf.config.experimental.set_memory_growth(gpu, True)
             logging.info("Using GPU with memory growth")
         except RuntimeError as e:
             # Changing device settings after the program is running may cause errors
@@ -126,32 +126,38 @@ def propensity_generation(dataset_map, MODEL_ROOT, b_use_predicted_confounders, 
         minibatch_size = config[4]
         learning_rate = config[5]
         max_norm = config[6]
-        tf_data_train = data_process.convert_to_tf_dataset(training_processed, minibatch_size)
-        tf_data_valid = data_process.convert_to_tf_dataset(validation_processed, minibatch_size)
+        tf_data_train = data_process.convert_to_tf_dataset(training_processed, minibatch_size, for_train=False)
+        tf_data_valid = data_process.convert_to_tf_dataset(validation_processed, minibatch_size, for_train=False)
 
         model_folder = os.path.join(MODEL_ROOT, net_name)
         model = model_process.load_model(model_folder, serialisation_name)
 
         # predictition
-        outputs = training_processed['scaled_outputs']
-        predictions = model.predict(tf_data_train.map(lambda x: x['inputs']))
-        #means, outputs, _, _ = test(training_processed, validation_processed, training_processed, tf_config,
-        #                            net_name, expt_name, dropout_rate, num_features, num_outputs,
-        #                            memory_multiplier, num_epochs, minibatch_size, learning_rate, max_norm,
-        #                            hidden_activation, output_activation, model_folder)
+        outputs = training_processed['outputs']
+        #input_data_for_prediction = tf_data_train.map(lambda x: x['inputs'])
+        #predictions = model.predict(input_data_for_prediction)
+        results = model_process.model_predict(model, tf_data_train, mc_sampling = False)
+        predictions = results['mean_pred']
        
         return predictions, outputs
 
     def get_weights(probs, targets):
+        targets = targets.astype(np.float64)
         w = probs*targets + (1-probs) * (1-targets)
+        #if np.any(w==0):
+        #    # 找出w中值为0的元素位置
+        #    zero_indices = np.where(w == 0)
+        #    # 输出这些位置对应的probs和targets值
+        #    print("导致w中有0值的probs和targets值:")
+        #    for index in np.nditer(zero_indices):
+        #        print(f"位置 {index}: probs = {probs[index]}, targets = {targets[index]}")
         return w.prod(axis=2)
 
 
     def get_weights_from_config(config):
         net_name = config[0]
-
+        print(net_name)
         probs, targets = get_predictions(config)
-
         return get_weights(probs, targets)
 
     def get_probabilities_from_config(config):

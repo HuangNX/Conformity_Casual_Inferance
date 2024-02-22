@@ -7,9 +7,11 @@ import numpy as np
 import pandas as pd
 import os
 import logging
+from tqdm import tqdm
 
 import tensorflow as tf
 from tensorflow.keras import *
+import tensorflow_probability as tfp
 
 #print time bar
 @tf.function
@@ -36,9 +38,9 @@ def printbar():
 def create_model(params):
     
     # Data params
-    training_data = None if 'training_dataset' not in params else params['training_dataset']
-    validation_data = None if 'validation_dataset' not in params else params['validation_dataset']
-    test_data = None if 'test_dataset' not in params else params['test_dataset']
+    #training_data = None if 'training_dataset' not in params else params['training_dataset']
+    #validation_data = None if 'validation_dataset' not in params else params['validation_dataset']
+    #test_data = None if 'test_dataset' not in params else params['test_dataset']
     input_size = params['input_size']
     output_size = params['output_size']
 
@@ -49,13 +51,16 @@ def create_model(params):
     hidden_layer_size = params['hidden_layer_size']
     memory_activation_type = params['hidden_activation']
     output_activation_type = params['output_activation']
-    initial_states = None
+    #initial_states = None
     # input layer
     inputs = layers.Input(shape=(None,input_size), dtype=tf.float32)
+    # define initial states 
+    initial_h =layers.Input(shape=(hidden_layer_size,), dtype=tf.float32, name='initial_h')
+    initial_c =layers.Input(shape=(hidden_layer_size,), dtype=tf.float32, name='initial_c')
 
     # LSTM layer
-    lstm = layers.LSTM(hidden_layer_size, activation=memory_activation_type, 
-                       return_sequences=True, dropout=dropout_rate)(inputs)
+    lstm, state_h, state_c = layers.LSTM(hidden_layer_size, activation=memory_activation_type, 
+                       return_sequences=True, return_state=True, dropout=dropout_rate)(inputs, initial_state=[initial_h, initial_c])
 
     # flattened_lstm = layers.Flatten()(lstm)
 
@@ -78,7 +83,7 @@ def create_model(params):
         outputs = layers.Activation(output_activation_type)(logits)
 
     # construct model
-    model = models.Model(inputs=inputs, outputs=outputs, name=net_name)
+    model = models.Model(inputs=[inputs, initial_h, initial_c], outputs=[outputs, state_h, state_c], name=net_name)
     return model
 
 # Step 2: Train Model
@@ -123,11 +128,17 @@ class CustomLoss(losses.Loss):
 class TrainModule(tf.Module):
     def __init__(self, params, name=None):
         super(TrainModule, self).__init__(name=name)
+        #self.strategy = strategy
         with self.name_scope:  #相当于with tf.name_scope("demo_module")
             self.epochs = params['num_epochs']
             self.ds_train = params['training_dataset']
             self.ds_valid = params['validation_dataset']
             self.ds_test = params['test_dataset']
+            self.input_size = params['input_size']
+            self.minibatch_size = params['minibatch_size']
+            self.hidden_layer_size = params['hidden_layer_size']
+            self.max_global_norm = params['max_norm']
+            self.backprop_length = params['backprop_length']
             self.optimizer = optimizers.Adam(learning_rate=params['learning_rate'])
             self.loss_func = CustomLoss(params['performance_metric'])
 
@@ -141,28 +152,63 @@ class TrainModule(tf.Module):
             self.valid_metric = metrics.MeanSquaredError(name='valid_mse')
 
     @tf.function
-    def train_step(self, model, inputs, outputs, active_entries, weights):
-
+    def train_step(self, model, inputs, outputs, active_entries, weights, chunk_sizes):
+        
         with tf.GradientTape() as tape:
-            predictions = model(inputs, training=True)
+            segment_predictions = []
+            start = 0
+            states = None
+            for chunk_size in chunk_sizes:
+                input_chunk = tf.slice(inputs, [0, start, 0], [-1, chunk_size, self.input_size])
+                if states is None:
+                    batch_size = tf.shape(input_chunk)[0]
+                    initial_state = tf.zeros([batch_size, self.hidden_layer_size], dtype=tf.float32)
+                    segment_prediction, state_h, state_c = model([input_chunk, initial_state, initial_state], training=True)
+                else:
+                    segment_prediction, state_h, state_c = model([input_chunk, states[0], states[1]], training=True)
+           
+                segment_predictions.append(segment_prediction)
+                # break links between states for truncated bptt
+                states = [state_h, state_c]
+                states = tf.identity(states)
+                # Starting point
+                start += chunk_size
+
+            # Dumping output
+            predictions = tf.concat(segment_predictions, axis=1)
+            # Compute loss
             loss = self.loss_func.train_call(outputs, predictions, active_entries, weights)
+
+        
+            #predictions = model(inputs, training=True)
+            #loss = self.loss_func.train_call(outputs, predictions, active_entries, weights)
         gradients = tape.gradient(loss, model.trainable_variables)
+        # Clip gradients
+        gradients, _ = tf.clip_by_global_norm(gradients, clip_norm = self.max_global_norm)
         self.optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
-    
         self.train_loss.update_state(loss)
         self.train_metric.update_state(outputs, predictions)
+
+        #return loss
 
     @tf.function
     def valid_step(self, model, inputs, outputs, active_entries):
 
-        predictions = model(inputs, training=False)
+        batch_size = tf.shape(inputs)[0]
+        initial_state = tf.zeros([batch_size, self.hidden_layer_size], dtype=tf.float32)
+        predictions, _, _ = model([inputs, initial_state, initial_state], training=False)
         loss = self.loss_func.valid_call(outputs, predictions, active_entries)
     
         self.valid_loss.update_state(loss)
         self.valid_metric.update_state(outputs, predictions)
 
-    def train_model(self, model):
+        #return loss
+
+    def train_model(self, model, params, 
+                    use_truncated_bptt=True, 
+                    b_stub_front=True,
+                    b_use_state_initialisation=True):
 
         # initialize history
         history = {
@@ -171,15 +217,43 @@ class TrainModule(tf.Module):
             'valid_loss': [],
             'valid_mse': []
             }
-
+        min_epochs = 1
+        min_loss = tf.constant(np.inf)
         for epoch in tf.range(1, self.epochs+1):
-        
+  
             for data in self.ds_train:
+                
+                input_data = data['inputs']
+                output_data = data['outputs']
+                active_entries = data['active_entries']
                 weights = data['propensity_weights'] if 'propensity_weights' in data else tf.constant(1.0)
-                self.train_step(model, data['inputs'], data['outputs'], data['active_entries'], weights)
+
+                # Stack up the dynamic RNNs for T-BPTT.
+                # Splitting it up
+                total_timesteps = input_data.get_shape().as_list()[1]
+                num_slices = int(total_timesteps / self.backprop_length)
+                chunk_sizes = [self.backprop_length for i in range(num_slices)]
+                odd_size = total_timesteps - self.backprop_length*num_slices
+
+                # get all the chunks
+                if odd_size > 0:
+                    if b_stub_front:
+                        chunk_sizes = [odd_size] + chunk_sizes
+                    else:
+                        chunk_sizes = chunk_sizes + [odd_size]
+
+                # Inplement TF style Truncated-backprop through time
+                
+                self.train_step(model, input_data, output_data, active_entries, weights, chunk_sizes)
+                #self.strategy.run(self.train_step, args = (model, data['inputs'], data['outputs'], data['active_entries'], weights))
 
             for data in self.ds_valid:
                 self.valid_step(model, data['inputs'], data['outputs'], data['active_entries'])
+                #self.strategy.run(self.valid_step, args = (model, data['inputs'], data['outputs'], data['active_entries']))
+
+            if tf.math.is_nan(self.valid_loss.result()):
+                logging.warning("NAN Loss found, terminating routine")
+                break
 
             # save history
             history['train_loss'].append(self.train_loss.result().numpy())
@@ -187,13 +261,19 @@ class TrainModule(tf.Module):
             history['valid_loss'].append(self.valid_loss.result().numpy())
             history['valid_mse'].append(self.valid_metric.result().numpy())
 
+
+            # save optimal results
+            if self.valid_loss.result() < min_loss and epoch > min_epochs:
+                min_loss = self.valid_loss.result()
+                save_model(model, params, history, option='optimal')
+
             # looging and state reset
-            logs = 'Epoch={},Loss:{},Accuracy:{},Valid Loss:{},Valid Accuracy:{}'
+            logs = 'Epoch={}/{},Loss:{},Accuracy:{},Valid Loss:{},Valid Accuracy:{} | {}'
         
             if epoch%1 ==0:
                 printbar()
                 tf.print(tf.strings.format(logs,
-                (epoch,self.train_loss.result(),self.train_metric.result(),self.valid_loss.result(),self.valid_metric.result())))
+                (epoch, self.epochs, self.train_loss.result(),self.train_metric.result(),self.valid_loss.result(),self.valid_metric.result(), params['net_name'])))
                 tf.print("")
             
             self.train_loss.reset_states()
@@ -223,7 +303,78 @@ class TrainModule(tf.Module):
         avg_metric = total_metric / num_batches
         return avg_loss, avg_metric # avg_metric=mse
 
-# Step 4: Save and Load Model
+# Step 4: Use Model to Make Predictions
+#def get_predictions(model, dataset, pred_times=500):
+    
+#    # setup predictions
+#    all_predictions = []
+#    for data_chunk in dataset:
+#        chunk_predictions = []
+#        for _ in range (pred_times):
+#            predictions = [model.predict(data_chunk['inputs'], verbose=False) for _ in range(pred_times)]
+#            predictions.append(predictions)
+
+#        predictions = np.stack(predictions)
+#        chunk_predictions.append(predictions)
+#        #predictions = tf.stack(predictions, axis=0)
+
+#    # Dumping output
+#    predictions = tf.concat(predictions, axis=0)
+#    mean_estimate = tf.reduce_mean(predictions, axis=0)
+#    upper_bound = tfp.stats.percentile(predictions, q=95.0, axis=0)
+#    lower_bound = tfp.stats.percentile(predictions, q=5.0, axis=0)
+
+#    return {'mean_pred': mean_estimate, 'upper_bound': upper_bound, 'lower_bound': lower_bound}
+
+def model_predict(model, dataset, mc_sampling=False):
+    # Initialize lists to store final statistics for all chunks
+    all_means = []
+    all_upper_bounds = []
+    all_lower_bounds = []
+    logs = 'Predicting ' + model.name
+    if mc_sampling:
+        pred_times = 100
+    else:
+        pred_times = 1
+
+    for data_chunk in tqdm(dataset, desc=logs):
+        chunk_predictions = []
+        batch_size = tf.shape(data_chunk['inputs'])[0]
+        hidden_layer_size = model.get_layer('lstm').units
+        initial_state = tf.zeros([batch_size, hidden_layer_size], dtype=tf.float32)
+        # Predict the current chunk multiple times
+        for _ in range(pred_times):
+            prediction, _, _ = model.predict([data_chunk['inputs'], initial_state, initial_state], verbose=0)
+            chunk_predictions.append(prediction)
+
+        # Convert list of predictions to a numpy array for statistical computation
+        chunk_predictions = np.array(chunk_predictions)
+
+        # Calculate mean, upper bound, and lower bound for the current chunk
+        mean_estimate = np.mean(chunk_predictions, axis=0)
+        upper_bound = np.percentile(chunk_predictions, 95, axis=0)
+        lower_bound = np.percentile(chunk_predictions, 5, axis=0)
+
+        # Append the statistics of the current chunk to their respective lists
+        all_means.append(mean_estimate)
+        all_upper_bounds.append(upper_bound)
+        all_lower_bounds.append(lower_bound)
+
+    # Optional: Convert lists to numpy arrays if further processing is needed
+    all_means = np.concatenate(all_means, axis=0) if all_means else np.array([])
+    all_upper_bounds = np.concatenate(all_upper_bounds, axis=0) if all_upper_bounds else np.array([])
+    all_lower_bounds = np.concatenate(all_lower_bounds, axis=0) if all_lower_bounds else np.array([])
+
+    # At this point, you can either return the raw statistics for each chunk,
+    # or aggregate them in some way depending on your application's needs.
+    # The following returns the list of statistics for all chunks.
+    return {
+        'mean_pred': all_means,
+        'upper_bound': all_upper_bounds,
+        'lower_bound': all_lower_bounds
+    }
+
+# Step 5: Save and Load Model
 # save the hyperparams results to conveniently load model
 def add_hyperparameter_results(history,
                                model_folder,
@@ -259,7 +410,7 @@ def load_hyperparameter_results(model_folder,
     else:
         return pd.DataFrame()
 
-def save_model(model, params, history):
+def save_model(model, params, history, option='optimal'): # option: final or optimal
     # Saving params
     model_folder = params['model_folder']
     # don't need params['experiment_name']
@@ -274,15 +425,17 @@ def save_model(model, params, history):
 
     # save model
     serialisation_name = "_".join([str(s) for s in relevant_name_parts])
+    serialisation_name = serialisation_name + "_" + option
     model_path = os.path.join(model_folder, serialisation_name)
     model.save(model_path, save_format = 'tf')
     
-    # save history
-    history_path = os.path.join(model_folder, "history.csv")
-    history.to_csv(history_path, index=False)
-
-    # save hyperparams results
-    add_hyperparameter_results(history, model_folder, params['net_name'], serialisation_name)
+    # save history (if optimal)
+    if option == 'optimal':
+        history = pd.DataFrame(history)
+        history_path = os.path.join(model_folder, "history.csv")
+        history.to_csv(history_path, index=False)
+        # save hyperparams results
+        add_hyperparameter_results(history, model_folder, params['net_name'], serialisation_name)
 
     logging.info('Model have been saved')
 
