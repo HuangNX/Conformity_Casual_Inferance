@@ -1,4 +1,4 @@
-"""
+ï»¿"""
 CODE ADAPTED FROM: https://github.com/sjblim/rmsn_nips_2018
 
 Implementation of Recurrent Marginal Structural Networks (R-MSNs):
@@ -52,7 +52,7 @@ def rnn_predict(dataset, MODEL_ROOT, b_use_predicted_confounders, b_use_oracle_c
             # Changing device settings after the program is running may cause errors
             logging.info(e)
     else:
-        # if no GPU£¬using CPU
+        # if no GPUï¼Œusing CPU
         logging.info("No GPU found, using CPU")
 
     configs = [
@@ -104,13 +104,15 @@ def rnn_predict(dataset, MODEL_ROOT, b_use_predicted_confounders, b_use_oracle_c
         output_activation = activation_map[net_name][1]
 
         # tansform data to tf dataset
-        tf_data = data_process.convert_to_tf_dataset(dataset_processed, minibatch_size)
+        tf_data = data_process.convert_to_tf_dataset(dataset_processed, minibatch_size, for_train=False)
 
         # Load model and predict
         model_folder = os.path.join(MODEL_ROOT, net_name)
         model = model_process.load_model(model_folder, serialisation_name)
-        input_data_for_prediction = tf_data.map(lambda x: x['inputs'])
-        predictions = model.predict(input_data_for_prediction)
+        #input_data_for_prediction = tf_data.map(lambda x: x['inputs'])
+        #predictions = model.predict(input_data_for_prediction)
+        results = model_process.model_predict(model, tf_data, mc_sampling = False)
+        predictions = results['mean_pred']
         
         # Rescale predictions
         predictions = predictions * dataset_processed['output_stds'] + dataset_processed['output_means']

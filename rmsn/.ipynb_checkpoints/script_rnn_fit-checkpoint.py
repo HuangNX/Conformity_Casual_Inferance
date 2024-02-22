@@ -28,9 +28,9 @@ logging.getLogger().setLevel(logging.INFO)
 # EDIT ME! ################################################################################################
 # Defines specific parameters to train for - skips hyperparamter optimisation if so
 specifications = {
-     'rnn_propensity_weighted': (0.1, 4, 100, 64, 0.001, 1.0),
-     'treatment_rnn_action_inputs_only': (0.1, 3, 100, 128, 0.01, 2.0),
-     'treatment_rnn': (0.1, 4, 100, 64, 0.01, 1.0),
+     'rnn_propensity_weighted': (0.1, 4, 100, 64, 0.005, 1.0),
+     'treatment_rnn_action_inputs_only': (0.1, 3, 100, 128, 0.005, 2.0),
+     'treatment_rnn': (0.1, 4, 100, 64, 0.005, 1.0),
 } # decrease learning rate from 0.01 to 0.005 
 ####################################################################################################################
 
@@ -76,11 +76,11 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
     gpus = tf.config.list_physical_devices('GPU')
     if gpus:
         try:
-            # set TensorFlow to use the first GPU
-            gpu0 = gpus[0]
-            tf.config.set_visible_devices([gpu0], 'GPU')
-            # set GPU memery growth
-            tf.config.experimental.set_memory_growth(gpu0, True)
+            # set TensorFlow to use all GPU
+            tf.config.set_visible_devices(gpus, 'GPU')
+            for gpu in gpus:
+                # set GPU memery growth
+                tf.config.experimental.set_memory_growth(gpu, True)
             logging.info("Using GPU with memory growth")
         except RuntimeError as e:
             # Changing device settings after the program is running may cause errors
@@ -95,6 +95,7 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
 
     # Start Running hyperparam opt
     #opt_params = {}
+    mse_dict = {}
     for net_name in net_names:
 
         # Re-run hyperparameter optimisation if parameters are not specified, otherwise train with defined params
@@ -207,19 +208,25 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
                     'softmax_size': 0, #not used in this paper, but allows for categorical actions
                     'performance_metric': 'xentropy' if output_activation == 'sigmoid' else 'mse'}
 
-            # stpe1: construct model
-            tf.keras.backend.clear_session()
-            model = model_process.create_model(model_parameters)
-            model.summary()
+            strategy = tf.distribute.MirroredStrategy()
+            with strategy.scope():
+                # stpe1: construct model
+                tf.keras.backend.clear_session()
+                model = model_process.create_model(model_parameters)
+                model.summary()
 
-            # step2: train model
-            Train = model_process.TrainModule(model_parameters)
-            history = Train.train_model(model)
-            # history = model_process.train_model(model, model_parameters)
-            history = pd.DataFrame(history)
+                # step2: train model
+                Train = model_process.TrainModule(model_parameters)
+                history = Train.train_model(model, model_parameters)
+                # history = model_process.train_model(model, model_parameters)
 
-            # step3: save model
-            model_process.save_model(model, model_parameters, history)
+                # step3: save final model and history
+                model_process.save_model(model, model_parameters, history, option='final')
+
+                # step4: evaluate model using test data
+                _, mse = Train.evaluate_model(model)
+            
+            mse_dict[net_name] = mse
 
             # loop control and hyperparameter save
             #hyperparam_count = len(hyperparam_opt.columns)
@@ -232,3 +239,4 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
 
         # Flag optimal params
     #logging.info(opt_params)
+    return mse_dict

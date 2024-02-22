@@ -28,9 +28,9 @@ logging.getLogger().setLevel(logging.INFO)
 # EDIT ME! ################################################################################################
 # Defines specific parameters to train for - skips hyperparamter optimisation if so
 specifications = {
-     'rnn_propensity_weighted': (0.1, 4, 100, 64, 0.001, 1.0),
-     'treatment_rnn_action_inputs_only': (0.1, 3, 100, 128, 0.01, 2.0),
-     'treatment_rnn': (0.1, 4, 100, 64, 0.01, 1.0),
+     'rnn_propensity_weighted': (0.1, 4, 100, 64, 0.005, 1.0),
+     'treatment_rnn_action_inputs_only': (0.1, 3, 100, 128, 0.005, 2.0),
+     'treatment_rnn': (0.1, 4, 100, 64, 0.005, 1.0),
 } # decrease learning rate from 0.01 to 0.005 
 ####################################################################################################################
 
@@ -76,11 +76,11 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
     gpus = tf.config.list_physical_devices('GPU')
     if gpus:
         try:
-            # set TensorFlow to use the first GPU
-            gpu0 = gpus[0]
-            tf.config.set_visible_devices([gpu0], 'GPU')
-            # set GPU memery growth
-            tf.config.experimental.set_memory_growth(gpu0, True)
+            # set TensorFlow to use all GPU
+            tf.config.set_visible_devices(gpus, 'GPU')
+            for gpu in gpus:
+                # set GPU memery growth
+                tf.config.experimental.set_memory_growth(gpu, True)
             logging.info("Using GPU with memory growth")
         except RuntimeError as e:
             # Changing device settings after the program is running may cause errors
@@ -88,6 +88,10 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
     else:
         # if no GPU，using CPU
         logging.info("No GPU found, using CPU")
+
+    # Create a distribution strategy
+    #strategy = tf.distribute.MirroredStrategy()
+    #print('Number of devices: %d' % strategy.num_replicas_in_sync)
 
     training_data = dataset_map['training_data']
     validation_data = dataset_map['validation_data']
@@ -118,6 +122,7 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
         test_processed = data_process.get_processed_data(test_data, b_predict_actions,
                                                  b_use_actions_only, b_use_predicted_confounders,
                                                  b_use_oracle_confounders, b_remove_x1)
+
 
         num_features = training_processed['scaled_inputs'].shape[-1]
         num_outputs = training_processed['scaled_outputs'].shape[-1]
@@ -171,9 +176,15 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
             model_folder = os.path.join(MODEL_ROOT, net_name)
 
             # transform data to tf format
+            #global_batch_size = minibatch_size * strategy.num_replicas_in_sync
             tf_data_train = data_process.convert_to_tf_dataset(training_processed, minibatch_size)
             tf_data_valid = data_process.convert_to_tf_dataset(validation_processed, minibatch_size)
             tf_data_test = data_process.convert_to_tf_dataset(test_processed, minibatch_size)
+            
+            # distribute them
+            #tf_data_train = strategy.experimental_distribute_dataset(tf_data_train)
+            #tf_data_valid = strategy.experimental_distribute_dataset(tf_data_valid)
+            #tf_data_test = strategy.experimental_distribute_dataset(tf_data_test)
             
             #hyperparam_opt = train(net_name, expt_name,
             #                      training_processed, validation_processed, test_processed,
@@ -199,6 +210,7 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
                     'hidden_layer_size': hidden_layer_size,
                     'num_epochs': num_epochs,
                     'minibatch_size': minibatch_size,
+                    #'global_batch_size': global_batch_size,
                     'learning_rate': learning_rate,
                     'max_norm': max_norm,
                     'model_folder': model_folder,
@@ -208,6 +220,8 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
                     'softmax_size': 0, #not used in this paper, but allows for categorical actions
                     'performance_metric': 'xentropy' if output_activation == 'sigmoid' else 'mse'}
 
+
+            #with strategy.scope():
             # stpe1: construct model
             tf.keras.backend.clear_session()
             model = model_process.create_model(model_parameters)
@@ -215,15 +229,17 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
 
             # step2: train model
             Train = model_process.TrainModule(model_parameters)
-            history = Train.train_model(model)
+            #Train = model_process.TrainModule(model_parameters, strategy)
+            
+            history = Train.train_model(model, model_parameters)
             # history = model_process.train_model(model, model_parameters)
-            history = pd.DataFrame(history)
 
-            # step3: save model and history
-            model_process.save_model(model, model_parameters, history)
+            # step3: save final model and history
+            model_process.save_model(model, model_parameters, history, option='final')
 
             # step4: evaluate model using test data
             _, mse = Train.evaluate_model(model)
+            
             mse_dict[net_name] = mse
 
             # loop control and hyperparameter save
