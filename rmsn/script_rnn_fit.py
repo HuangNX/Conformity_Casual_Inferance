@@ -9,6 +9,7 @@ Marginal Structural Networks", Advances in Neural Information Processing Systems
 import rmsn.configs
 
 import tensorflow as tf
+from tensorflow.keras import *
 import numpy as np
 import pandas as pd
 import logging
@@ -19,6 +20,8 @@ import argparse
 #import rmsn.core_routines as core
 import rmsn.libs.model_process as model_process
 import rmsn.libs.data_process as data_process
+
+from rmsn.libs.model_process import strategy
 
 ROOT_FOLDER = rmsn.configs.ROOT_FOLDER
 #MODEL_ROOT = configs.MODEL_ROOT
@@ -89,7 +92,7 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
         # if no GPU，using CPU
         logging.info("No GPU found, using CPU")
 
-    # Create a distribution strategy
+    ## Create a distribution strategy
     #strategy = tf.distribute.MirroredStrategy()
     #print('Number of devices: %d' % strategy.num_replicas_in_sync)
 
@@ -176,26 +179,15 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
             model_folder = os.path.join(MODEL_ROOT, net_name)
 
             # transform data to tf format
-            #global_batch_size = minibatch_size * strategy.num_replicas_in_sync
-            tf_data_train = data_process.convert_to_tf_dataset(training_processed, minibatch_size)
-            tf_data_valid = data_process.convert_to_tf_dataset(validation_processed, minibatch_size)
-            tf_data_test = data_process.convert_to_tf_dataset(test_processed, minibatch_size)
+            global_batch_size = minibatch_size * strategy.num_replicas_in_sync
+            tf_data_train = data_process.convert_to_tf_dataset(training_processed, global_batch_size)
+            tf_data_valid = data_process.convert_to_tf_dataset(validation_processed, global_batch_size)
+            tf_data_test = data_process.convert_to_tf_dataset(test_processed, global_batch_size)
             
             # distribute them
-            #tf_data_train = strategy.experimental_distribute_dataset(tf_data_train)
-            #tf_data_valid = strategy.experimental_distribute_dataset(tf_data_valid)
-            #tf_data_test = strategy.experimental_distribute_dataset(tf_data_test)
-            
-            #hyperparam_opt = train(net_name, expt_name,
-            #                      training_processed, validation_processed, test_processed,
-            #                      dropout_rate, memory_multiplier, num_epochs,
-            #                      minibatch_size, learning_rate, max_norm,
-            #                      use_truncated_bptt,
-            #                      num_features, num_outputs, model_folder,
-            #                      hidden_activation, output_activation,
-            #                      config,
-            #                      "hyperparam opt: {} of {}".format(hyperparam_count,
-            #                                                        max_hyperparam_runs))
+            tf_data_train = strategy.experimental_distribute_dataset(tf_data_train)
+            tf_data_valid = strategy.experimental_distribute_dataset(tf_data_valid)
+            tf_data_test = strategy.experimental_distribute_dataset(tf_data_test)
 
             # construct model parameters
             hidden_layer_size = int(memory_multiplier * num_features)
@@ -210,7 +202,7 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
                     'hidden_layer_size': hidden_layer_size,
                     'num_epochs': num_epochs,
                     'minibatch_size': minibatch_size,
-                    #'global_batch_size': global_batch_size,
+                    'global_batch_size': global_batch_size,
                     'learning_rate': learning_rate,
                     'max_norm': max_norm,
                     'model_folder': model_folder,
@@ -223,22 +215,30 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
 
             #with strategy.scope():
             # stpe1: construct model
-            tf.keras.backend.clear_session()
-            model = model_process.create_model(model_parameters)
-            model.summary()
+            #tf.keras.backend.clear_session()
+            with strategy.scope():
+                model = model_process.create_model(model_parameters)
+                model.summary()
 
-            # step2: train model
-            Train = model_process.TrainModule(model_parameters)
-            #Train = model_process.TrainModule(model_parameters, strategy)
-            
-            history = Train.train_model(model, model_parameters)
+                # step2: train model
+                #model_parameters['optimizer'] = optimizers.Adam(learning_rate=learning_rate)
+                #model_parameters['train_metric'] = metrics.MeanSquaredError(name='train_mse')
+                #model_parameters['valid_loss'] = metrics.Mean(name='valid_loss')
+                #model_parameters['valid_metric'] = metrics.MeanSquaredError(name='valid_mse')
+                #model_parameters['loss_func'] = model_process.CustomLoss(model_parameters['performance_metric'], strategy.num_replicas_in_sync, global_batch_size)
+                #Train = model_process.TrainModule(model, model_parameters)
+                #Train = TrainModule(model_parameters)
+            #  end scope
+            model_process.train_model(model, model_parameters)
+            #history = Train.train_model(model_parameters)
             # history = model_process.train_model(model, model_parameters)
 
             # step3: save final model and history
             model_process.save_model(model, model_parameters, history, option='final')
 
             # step4: evaluate model using test data
-            _, mse = Train.evaluate_model(model)
+            new_model = model_process.create_model(model_parameters)
+            _, mse = Train.eval_step(new_model)
             
             mse_dict[net_name] = mse
 
