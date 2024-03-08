@@ -15,7 +15,7 @@ import copy
 
 from sklearn.model_selection import ShuffleSplit
 
-from utils.evaluation_utils import write_results_to_file
+from utils.evaluation_utils import save_data, write_results_to_file
 from factor_model import FactorModel
 from rmsn.script_rnn_fit import rnn_fit
 from rmsn.script_rnn_test import rnn_test
@@ -368,35 +368,37 @@ def test_time_series_deconfounder(dataset, num_substitute_confounders, exp_name,
     train_index, test_index = next(shuffle_split.split(dataset['covariates'][:, :, 0]))
     shuffle_split = ShuffleSplit(n_splits=1, test_size=0.11, random_state=10)
     train_index, val_index = next(shuffle_split.split(dataset['covariates'][train_index, :, 0]))
-    dataset_map = get_dataset_splits(dataset, train_index, val_index, test_index, use_predicted_confounders=False)
+#     dataset_map = get_dataset_splits(dataset, train_index, val_index, test_index, use_predicted_confounders=False)
 
 #     dataset_train = dataset_map['training_data']
 #     dataset_val = dataset_map['validation_data']
 
 #     logging.info("Fitting factor model")
 #     predicted_confounders = train_factor_model(dataset_train, dataset_val,
-#                                                dataset,
-#                                                num_confounders=num_substitute_confounders,
-#                                                b_hyperparameter_optimisation=b_hyperparm_tuning,
-#                                                hyperparams_file=factor_model_hyperparams_file)
+#                                             dataset,
+#                                             num_confounders=num_substitute_confounders,
+#                                             b_hyperparameter_optimisation=b_hyperparm_tuning,
+#                                             hyperparams_file=factor_model_hyperparams_file)
 
 #     dataset['predicted_confounders'] = predicted_confounders
-#     write_results_to_file(dataset_with_confounders_filename, dataset)
+    #write_results_to_file(dataset_with_confounders_filename, dataset)
+    # save_data(dataset_with_confounders_filename, dataset)
+    # logging.info('Finishing saving dataset with confounders!')
 
-    # dataset_map = get_dataset_splits(dataset, train_index, val_index, test_index, use_predicted_confounders=True)
+    dataset_map = get_dataset_splits(dataset, train_index, val_index, test_index, use_predicted_confounders=True)
 
-    logging.info('Fitting counfounded recurrent marginal structural networks.')
-    rmse_without_confounders = train_rmsn(dataset_map, 'rmsn_' + str(exp_name), b_use_predicted_confounders=False)
+    #logging.info('Fitting counfounded recurrent marginal structural networks.')
+    #rmse_without_confounders = train_rmsn(dataset_map, 'rmsn_' + str(exp_name), b_use_predicted_confounders=False)
 
-    # logging.info(
-    #     'Fitting deconfounded (D_Z = {}) recurrent marginal structural networks.'.format(num_substitute_confounders))
-    # rmse_with_confounders = train_rmsn(dataset_map, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True)
+    logging.info(
+        'Fitting deconfounded (D_Z = {}) recurrent marginal structural networks.'.format(num_substitute_confounders))
+    rmse_with_confounders = train_rmsn(dataset_map, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True)
 
     # print("Outcome model RMSE when trained WITHOUT the hidden confounders.")
     # print(rmse_without_confounders)
 
-    # print("Outcome model RMSE when trained WITH the substitutes for the hidden confounders.")
-    # print(rmse_with_confounders)
+    print("Outcome model RMSE when trained WITH the substitutes for the hidden confounders.")
+    print(rmse_with_confounders)
     
     # logging.info('Predicting treatment effects of conformity factor.')
     # results = predict_effects(dataset, 'rmsn_' + str(exp_name), calculate_counterfactual=False, b_use_predicted_confounders=False)
@@ -405,22 +407,22 @@ def test_time_series_deconfounder(dataset, num_substitute_confounders, exp_name,
     # logging.info("Successfully saved predictions. Finished.")
     
     # plot ale
-    # using only 2019 data
-#     column_index = 12  # index of year 2020 indicator
-#     selected_indices = np.where((dataset['covariates'][:, :, 0] == 1)&\
-#                                 (dataset['covariates'][:, :, column_index] == 1))[0]
-#     unique_selected_indices = np.unique(selected_indices)
-#     for key in dataset.keys():
-#         dataset[key] = dataset[key][unique_selected_indices]
+    # using only 2020 data [12-year2019, 13-year2020, 14-year2023]
+    #column_index = 13  # index of year 2020 indicator
+    #selected_indices = np.where(dataset['covariates'][:, :, column_index] == 1)[0]
+    #unique_selected_indices = np.unique(selected_indices)
+    #for key in dataset.keys():
+    #    dataset[key] = dataset[key][unique_selected_indices]
         
-    # logging.info('Compute Single Accumulated Local Effects (ALE), draw and save the ale plot')
-    # single_ale_fig, ale = compute_ale(dataset, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True, features=['conformity'])
-    # single_ale_fig.savefig('results/image/new_sample_5000_conformity_ale.png')
 
-    # logging.info('Compute Time Windows Accumulated Local Effects (ALE), draw and save the ale plot')
-    # window_ale_fig, ale = compute_ale(dataset, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True, features=['week', 'conformity'])
-    # window_ale_fig.savefig('results/image/new_sample_5000_conformity_policy_ale.png')
+    #logging.info('Compute Single Accumulated Local Effects (ALE), draw and save the ale plot')
+    #single_ale_fig, ale = compute_ale(dataset, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True, features=['conformity'])
+    #single_ale_fig.savefig('results/image/new_sample_8000_conformity_ale.png')
 
-    # logging.info('Compute Interactive Accumulated Local Effects (ALE), draw and save the ale plot')
-    # interact_ale_fig, ale = compute_ale(dataset, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True, features=['conformity','voluntary'])
-    # interact_ale_fig.savefig('results/image/new_sample_5000_conformity_case_ale.png')
+    logging.info('Compute Time Windows Accumulated Local Effects (ALE), draw and save the ale plot')
+    window_ale_fig, ale = compute_ale(dataset, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True, features=['week', 'conformity'])
+    window_ale_fig.savefig('results/image/new_sample_8000_conformity_policy_ale_v2.png')
+
+    #logging.info('Compute Interactive Accumulated Local Effects (ALE), draw and save the ale plot')
+    #interact_ale_fig, ale = compute_ale(dataset, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True, features=['conformity','voluntary'])
+    #interact_ale_fig.savefig('results/image/new_sample_8000_conformity_case_ale.png')
