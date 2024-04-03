@@ -1,4 +1,4 @@
-"""
+﻿"""
 CODE ADAPTED FROM: https://github.com/sjblim/rmsn_nips_2018
 
 Implementation of Recurrent Marginal Structural Networks (R-MSNs):
@@ -558,4 +558,40 @@ class RnnModel:
         return handles
 
 
+# 先batch循环，再pred_time循环
+def model_predict(model, dataset, hidden_layer_size, mc_sampling=False):
+    # Initialize lists to store final statistics for all chunks
+    Predictions = []
+    all_mean_predictions = []
+    all_std_dev_predictions = []
+    logs = 'Predicting ' + model.name
+    if mc_sampling:
+        pred_times = 20
+    else:
+        pred_times = 1
+    
+    for data_chunk in tqdm(dataset, desc="Processing"):
+        batch_size = tf.shape(data_chunk['inputs'])[0]
+        initial_state = tf.zeros([batch_size, hidden_layer_size], dtype=tf.float32)
 
+        chunk_predictions = []
+        for _ in range(pred_times):
+            prediction, _, _ = model.predict_on_batch([data_chunk['inputs'], initial_state, initial_state])
+            chunk_predictions.append(prediction)
+
+        chunk_predictions = np.array(chunk_predictions)
+        mean_predictions = np.mean(chunk_predictions, axis=0)
+        std_dev_predictions = np.std(chunk_predictions, axis=0)
+
+        all_mean_predictions.append(mean_predictions)
+        all_std_dev_predictions.append(std_dev_predictions)
+
+    if mc_sampling:
+        # Stack to form a comprehensive result set for all batches
+        mean_predictions_result = np.concatenate(all_mean_predictions, axis=0)
+        std_dev_predictions_result = np.concatenate(all_std_dev_predictions, axis=0)
+        return mean_predictions_result, std_dev_predictions_result
+    else:
+        # This part is theoretically unreachable due to the return statement inside the loop when not mc_sampling
+        # But included for logical completeness
+        return np.concatenate(all_mean_predictions, axis=0)

@@ -34,6 +34,7 @@ tf_upgrade_v2 \
     
 -- tf2 try
 python main_time_series_deconfounder.py --gamma=0.6 --exp_name='tf2_test'  --results_dir='results' --data_filename='../fullfeature_fillmean_1000.txt' --num_substitute_hidden_confounders=1
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='tf2_test'  --results_dir='results' --data_filename='results/tf2_test_dataset_with_substitute_confounders.txt' --num_substitute_hidden_confounders=1
 
 python main_time_series_deconfounder.py --gamma=0.6 --exp_name='tf2_test'  --results_dir='results' --data_filename='../sample_2w_dataset_with_substitute_confounders.txt' --num_substitute_hidden_confounders=1
 
@@ -45,3 +46,9 @@ python main_time_series_deconfounder.py --gamma=0.6 --exp_name='samples_2w_with_
 
 -- 新老版本结果测试
 python main_time_series_deconfounder.py --gamma=0.6 --exp_name='result_test'  --results_dir='results' --data_filename='../new_sample_8000_v2_dataset_with_substitute_confounders.txt' --num_substitute_hidden_confounders=1
+
+-- 全样本
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data'  --results_dir='results' --data_filename='../data/sample_32w.h5' --num_substitute_hidden_confounders=1
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data'  --results_dir='results' --data_filename='results/all_data_dataset_with_substitute_confounders.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data_v2'  --results_dir='results' --data_filename='../data/all_data_dataset_with_substitute_confounders.h5' --num_substitute_hidden_confounders=1

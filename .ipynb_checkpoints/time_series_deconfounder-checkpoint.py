@@ -9,6 +9,7 @@ Code Author: Ioana Bica (ioana.bica95@gmail.com)
 import logging
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 import os
 import shutil
 import copy
@@ -18,7 +19,6 @@ from sklearn.model_selection import ShuffleSplit
 from utils.evaluation_utils import save_data, write_results_to_file
 from factor_model import FactorModel
 from rmsn.script_rnn_fit import rnn_fit
-from rmsn.script_rnn_test import rnn_test
 from rmsn.script_propensity_generation import propensity_generation
 from rmsn.script_rnn_predict import rnn_predict
 from ale import ale_plot
@@ -76,6 +76,18 @@ def train_factor_model(dataset_train, dataset_val, dataset, num_confounders, hyp
     model = FactorModel(params, best_hyperparams)
     model.train(dataset_train, dataset_val)
     predicted_confounders = model.compute_hidden_confounders(dataset)
+    
+    #p_value = model.eval_predictive_checks(dataset_val)
+    #plt.figure(figsize=(10, 6))
+    #plt.plot(p_value, marker='o', linestyle='-')
+    #plt.title('Predictive Checks P-Values Over Time')
+    #plt.xlabel('Time')
+    #plt.ylabel('P-Value')
+    #plt.grid(True)
+
+    ## 保存图像到本地文件
+    #plt.savefig('../p_values_plot.png')
+    #plt.close()  # 关闭图形，避免在 Jupyter 等环境中重复显示
 
     return predicted_confounders
 
@@ -197,29 +209,26 @@ def train_rmsn(dataset_map, model_name, b_use_predicted_confounders):
     model_name = model_name + '_use_confounders_' + str(b_use_predicted_confounders)
     MODEL_ROOT = os.path.join('results', model_name)
 
-    if not os.path.exists(MODEL_ROOT):
-        os.mkdir(MODEL_ROOT)
-        print("Directory ", MODEL_ROOT, " Created ")
-    else:
-        # Need to delete previously saved model.
-        shutil.rmtree(MODEL_ROOT)
-        os.mkdir(MODEL_ROOT)
-        print("Directory ", MODEL_ROOT, " Created ")
+    #if not os.path.exists(MODEL_ROOT):
+    #    os.mkdir(MODEL_ROOT)
+    #    print("Directory ", MODEL_ROOT, " Created ")
+    #else:
+    #    # Need to delete previously saved model.
+    #    shutil.rmtree(MODEL_ROOT)
+    #    os.mkdir(MODEL_ROOT)
+    #    print("Directory ", MODEL_ROOT, " Created ")
 
-    _ = rnn_fit(dataset_map=dataset_map, networks_to_train='propensity_networks', MODEL_ROOT=MODEL_ROOT,
-            b_use_predicted_confounders=b_use_predicted_confounders)
+    #rnn_fit(dataset_map=dataset_map, networks_to_train='propensity_networks', MODEL_ROOT=MODEL_ROOT,
+    #        b_use_predicted_confounders=b_use_predicted_confounders)
 
     propensity_generation(dataset_map=dataset_map, MODEL_ROOT=MODEL_ROOT,
                            b_use_predicted_confounders=b_use_predicted_confounders)
 
-    rmsn_mse = rnn_fit(networks_to_train='encoder', dataset_map=dataset_map, MODEL_ROOT=MODEL_ROOT,
+    rnn_fit(networks_to_train='encoder', dataset_map=dataset_map, MODEL_ROOT=MODEL_ROOT,
             b_use_predicted_confounders=b_use_predicted_confounders)
 
-    # rmsn_mse = rnn_test(dataset_map=dataset_map, MODEL_ROOT=MODEL_ROOT,
-    #                     b_use_predicted_confounders=b_use_predicted_confounders)
-
 #     rmse = np.sqrt(np.mean(rmsn_mse)) * 100
-    return rmsn_mse[list(rmsn_mse)[0]]
+    #return rmsn_mse[list(rmsn_mse)[0]]
 
 def predict_effects(predict_data, model_name, calculate_counterfactual, b_use_predicted_confounders, treatment_index=None):
     model_name = model_name + '_use_confounders_' + str(b_use_predicted_confounders)
@@ -252,6 +261,10 @@ def predict_effects(predict_data, model_name, calculate_counterfactual, b_use_pr
         rnn_predict(dataset=predict_data, MODEL_ROOT=MODEL_ROOT,
                     b_use_predicted_confounders=b_use_predicted_confounders)
 
+    print(predictions)
+    print(f"shape of predictions = {predictions.shape}")
+    print(observations)
+    print(f"shape of observations = {observations.shape}")
     results = dict()
     results['predictions'] = predictions
     results['observations'] = observations
@@ -368,22 +381,22 @@ def test_time_series_deconfounder(dataset, num_substitute_confounders, exp_name,
     train_index, test_index = next(shuffle_split.split(dataset['covariates'][:, :, 0]))
     shuffle_split = ShuffleSplit(n_splits=1, test_size=0.11, random_state=10)
     train_index, val_index = next(shuffle_split.split(dataset['covariates'][train_index, :, 0]))
-#     dataset_map = get_dataset_splits(dataset, train_index, val_index, test_index, use_predicted_confounders=False)
+    #dataset_map = get_dataset_splits(dataset, train_index, val_index, test_index, use_predicted_confounders=False)
+     
+    #dataset_train = dataset_map['training_data']
+    #dataset_val = dataset_map['validation_data']
 
-#     dataset_train = dataset_map['training_data']
-#     dataset_val = dataset_map['validation_data']
-
-#     logging.info("Fitting factor model")
-#     predicted_confounders = train_factor_model(dataset_train, dataset_val,
-#                                             dataset,
-#                                             num_confounders=num_substitute_confounders,
-#                                             b_hyperparameter_optimisation=b_hyperparm_tuning,
-#                                             hyperparams_file=factor_model_hyperparams_file)
-
-#     dataset['predicted_confounders'] = predicted_confounders
-    #write_results_to_file(dataset_with_confounders_filename, dataset)
-    # save_data(dataset_with_confounders_filename, dataset)
-    # logging.info('Finishing saving dataset with confounders!')
+    #logging.info("Fitting factor model")
+    #predicted_confounders = train_factor_model(dataset_train, dataset_val,
+    #                                        dataset,
+    #                                        num_confounders=num_substitute_confounders,
+    #                                        b_hyperparameter_optimisation=b_hyperparm_tuning,
+    #                                        hyperparams_file=factor_model_hyperparams_file)
+    ##print(predicted_confounders)
+    #dataset['predicted_confounders'] = predicted_confounders
+    ##write_results_to_file(dataset_with_confounders_filename, dataset)
+    #save_data(dataset_with_confounders_filename, dataset)
+    #logging.info('Finishing saving dataset with confounders!')
 
     dataset_map = get_dataset_splits(dataset, train_index, val_index, test_index, use_predicted_confounders=True)
 
@@ -392,17 +405,17 @@ def test_time_series_deconfounder(dataset, num_substitute_confounders, exp_name,
 
     logging.info(
         'Fitting deconfounded (D_Z = {}) recurrent marginal structural networks.'.format(num_substitute_confounders))
-    rmse_with_confounders = train_rmsn(dataset_map, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True)
+    train_rmsn(dataset_map, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True)
 
     # print("Outcome model RMSE when trained WITHOUT the hidden confounders.")
     # print(rmse_without_confounders)
 
-    print("Outcome model RMSE when trained WITH the substitutes for the hidden confounders.")
-    print(rmse_with_confounders)
+    #print("Outcome model RMSE when trained WITH the substitutes for the hidden confounders.")
+    #print(rmse_with_confounders)
     
-    # logging.info('Predicting treatment effects of conformity factor.')
-    # results = predict_effects(dataset, 'rmsn_' + str(exp_name), calculate_counterfactual=False, b_use_predicted_confounders=False)
-    # potential_results = predict_effects(dataset_map, 'rmsn_' + str(exp_name), calculate_counterfactual=True, b_use_predicted_confounders=True)
+    #logging.info('Predicting treatment effects of conformity factor.')
+    #results = predict_effects(dataset, 'rmsn_' + str(exp_name), calculate_counterfactual=False, b_use_predicted_confounders=False)
+    #potential_results = predict_effects(dataset_map, 'rmsn_' + str(exp_name), calculate_counterfactual=True, b_use_predicted_confounders=True)
     # write_results_to_file(model_prediction_file, results)
     # logging.info("Successfully saved predictions. Finished.")
     
@@ -414,14 +427,15 @@ def test_time_series_deconfounder(dataset, num_substitute_confounders, exp_name,
     #for key in dataset.keys():
     #    dataset[key] = dataset[key][unique_selected_indices]
         
-
     #logging.info('Compute Single Accumulated Local Effects (ALE), draw and save the ale plot')
+    ##dataset1 = copy.deepcopy(dataset)
     #single_ale_fig, ale = compute_ale(dataset, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True, features=['conformity'])
-    #single_ale_fig.savefig('results/image/new_sample_8000_conformity_ale.png')
+    #single_ale_fig.savefig('results/image/new_sample_1000_conformity_ale.png')
 
-    logging.info('Compute Time Windows Accumulated Local Effects (ALE), draw and save the ale plot')
-    window_ale_fig, ale = compute_ale(dataset, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True, features=['week', 'conformity'])
-    window_ale_fig.savefig('results/image/new_sample_8000_conformity_policy_ale_v2.png')
+    #logging.info('Compute Time Windows Accumulated Local Effects (ALE), draw and save the ale plot')
+    #dataset2 = copy.deepcopy(dataset)
+    #window_ale_fig, ale = compute_ale(dataset2, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True, features=['week', 'conformity'])
+    #window_ale_fig.savefig('results/image/new_sample_1000_conformity_policy_ale.png')
 
     #logging.info('Compute Interactive Accumulated Local Effects (ALE), draw and save the ale plot')
     #interact_ale_fig, ale = compute_ale(dataset, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True, features=['conformity','voluntary'])
