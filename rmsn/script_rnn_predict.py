@@ -7,15 +7,9 @@ Marginal Structural Networks", Advances in Neural Information Processing Systems
 """
 
 import rmsn.configs
-from rmsn.configs import load_optimal_parameters
 
-from rmsn.core_routines import predict
-import rmsn.core_routines as core
-
-import rmsn.libs.model_process as model_process
-import rmsn.libs.data_process as data_process
-
-from sklearn.metrics import roc_auc_score, average_precision_score
+from rmsn.core_routine import load_optimal_parameters, effect_predict
+from rmsn.libs.data_process import get_processed_data
 
 import tensorflow as tf
 import pandas as pd
@@ -42,11 +36,11 @@ def rnn_predict(dataset, MODEL_ROOT, b_use_predicted_confounders, b_use_oracle_c
     gpus = tf.config.list_physical_devices('GPU')
     if gpus:
         try:
-            # set TensorFlow to use the first GPU
-            gpu0 = gpus[0]
-            tf.config.set_visible_devices([gpu0], 'GPU')
-            # set GPU memery growth
-            tf.config.experimental.set_memory_growth(gpu0, True)
+            # set TensorFlow to use all GPU
+            tf.config.set_visible_devices(gpus, 'GPU')
+            for gpu in gpus:
+                # set GPU memery growth
+                tf.config.experimental.set_memory_growth(gpu, True)
             logging.info("Using GPU with memory growth")
         except RuntimeError as e:
             # Changing device settings after the program is running may cause errors
@@ -56,7 +50,7 @@ def rnn_predict(dataset, MODEL_ROOT, b_use_predicted_confounders, b_use_oracle_c
         logging.info("No GPU found, using CPU")
 
     configs = [
-        model_process.load_optimal_parameters(net_name = 'rnn_propensity_weighted',MODEL_ROOT = MODEL_ROOT)
+        load_optimal_parameters(net_name = 'rnn_propensity_weighted',MODEL_ROOT = MODEL_ROOT)
     ]
 
     # Config
@@ -84,16 +78,17 @@ def rnn_predict(dataset, MODEL_ROOT, b_use_predicted_confounders, b_use_oracle_c
 
         # Extract only relevant trajs and shift data
         keep_first_point = True
-        dataset_processed = data_process.get_processed_data(dataset, b_predict_actions, b_use_actions_only, b_use_predicted_confounders, 
+        dataset_processed = get_processed_data(MODEL_ROOT, dataset, b_predict_actions, b_use_actions_only, b_use_predicted_confounders, 
                                                     b_use_oracle_confounders, b_remove_x1, keep_first_point)
         dataset_processed['output_means'] = dataset['output_means']
         dataset_processed['output_stds'] = dataset['output_stds']
 
-        num_features = dataset_processed['scaled_inputs'].shape[-1]  # 4 if not b_use_actions_only else 3
-        num_outputs = dataset_processed['scaled_outputs'].shape[-1]  # 1 if not b_predict_actions else 3  # 5
+        num_features = dataset_processed['scaled_inputs'].shape[-1]  
+        num_outputs = dataset_processed['scaled_outputs'].shape[-1]  
 
         # Pull remaining params
         dropout_rate = config[1]
+        hidden_layer_size = config[2]
         memory_multiplier = config[2] / num_features
         num_epochs = config[3]
         minibatch_size = config[4]
@@ -103,17 +98,28 @@ def rnn_predict(dataset, MODEL_ROOT, b_use_predicted_confounders, b_use_oracle_c
         hidden_activation = activation_map[net_name][0]
         output_activation = activation_map[net_name][1]
 
-        # tansform data to tf dataset
-        tf_data = data_process.convert_to_tf_dataset(dataset_processed, minibatch_size, for_train=False)
-
-        # Load model and predict
         model_folder = os.path.join(MODEL_ROOT, net_name)
-        model = model_process.load_model(model_folder, serialisation_name)
-        #input_data_for_prediction = tf_data.map(lambda x: x['inputs'])
-        #predictions = model.predict(input_data_for_prediction)
-        results = model_process.model_predict(model, tf_data, mc_sampling = False)
-        predictions = results['mean_pred']
-        
+        model_parameters = {'net_name': net_name,
+                    'experiment_name': expt_name,
+                    'serialisation_name':serialisation_name,
+                    'dataset': dataset_processed,
+                    'dropout_rate': dropout_rate,
+                    'input_size': num_features,
+                    'output_size': num_outputs,
+                    'hidden_layer_size': hidden_layer_size,
+                    'num_epochs': num_epochs,
+                    'minibatch_size': minibatch_size,
+                    'learning_rate': learning_rate,
+                    'max_norm': max_norm,
+                    'model_folder': model_folder,
+                    'hidden_activation': hidden_activation,
+                    'output_activation': output_activation,
+                    'backprop_length': 60,  # backprop over 60 timesteps for truncated backpropagation through time
+                    'softmax_size': 0, #not used in this paper, but allows for categorical actions
+                    'performance_metric': 'xentropy' if output_activation == 'sigmoid' else 'mse'}
+
+        predictions = effect_predict(model_parameters)
+
         # Rescale predictions
         predictions = predictions * dataset_processed['output_stds'] + dataset_processed['output_means']
         #observations = dataset['outcomes']*dataset['output_stds']+dataset['output_means']

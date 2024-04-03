@@ -6,6 +6,7 @@ Brian Lim, Ahmed M Alaa, Mihaela van der Schaar, "Forecasting Treatment Response
 Marginal Structural Networks", Advances in Neural Information Processing Systems, 2018.
 """
 
+from re import I
 import rmsn.configs
 
 import tensorflow as tf
@@ -15,13 +16,8 @@ import pandas as pd
 import logging
 import os
 import argparse
-
-#from rmsn.core_routines import train
-#import rmsn.core_routines as core
-import rmsn.libs.model_process as model_process
-import rmsn.libs.data_process as data_process
-
-from rmsn.libs.model_process import strategy
+from rmsn.core_routine import propensity_model_train, predictive_model_train, model_evaluate
+from rmsn.libs.data_process import get_processed_data
 
 ROOT_FOLDER = rmsn.configs.ROOT_FOLDER
 #MODEL_ROOT = configs.MODEL_ROOT
@@ -31,9 +27,9 @@ logging.getLogger().setLevel(logging.INFO)
 # EDIT ME! ################################################################################################
 # Defines specific parameters to train for - skips hyperparamter optimisation if so
 specifications = {
-     'rnn_propensity_weighted': (0.1, 4, 100, 64, 0.005, 1.0),
-     'treatment_rnn_action_inputs_only': (0.1, 3, 100, 128, 0.005, 2.0),
-     'treatment_rnn': (0.1, 4, 100, 64, 0.005, 1.0),
+     'rnn_propensity_weighted': (0.1, 5, 100, 64, 0.005, 1.0),
+     'treatment_rnn_action_inputs_only': (0.1, 26, 100, 128, 0.005, 2.0),
+     'treatment_rnn': (0.1, 5, 100, 64, 0.005, 1.0),
 } # decrease learning rate from 0.01 to 0.005 
 ####################################################################################################################
 
@@ -116,19 +112,31 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
 
 
        # Extract only relevant trajs and shift data
-        training_processed = data_process.get_processed_data(training_data, b_predict_actions,
+        training_processed = get_processed_data(MODEL_ROOT, training_data, b_predict_actions,
                                                      b_use_actions_only, b_use_predicted_confounders,
                                                      b_use_oracle_confounders, b_remove_x1)
-        validation_processed = data_process.get_processed_data(validation_data, b_predict_actions,
+        validation_processed = get_processed_data(MODEL_ROOT, validation_data, b_predict_actions,
                                                        b_use_actions_only, b_use_predicted_confounders,
                                                        b_use_oracle_confounders, b_remove_x1)
-        test_processed = data_process.get_processed_data(test_data, b_predict_actions,
+        test_processed = get_processed_data(MODEL_ROOT, test_data, b_predict_actions,
                                                  b_use_actions_only, b_use_predicted_confounders,
                                                  b_use_oracle_confounders, b_remove_x1)
 
 
         num_features = training_processed['scaled_inputs'].shape[-1]
+        num_timesteps = training_processed['scaled_inputs'].shape[1]
         num_outputs = training_processed['scaled_outputs'].shape[-1]
+
+        #　compute the number of continuous treatments (if networks_to_train == "propensity_networks")
+        if networks_to_train == "propensity_networks":
+            num_binary_treatments = 0
+            for index in range(num_outputs):
+                treatment = training_processed['scaled_outputs'][:,:,index]
+                if np.all(np.isin(treatment, [0, 1])):
+                    num_binary_treatments += 1
+        else:
+            num_binary_treatments = num_outputs
+        num_continuous_treatments = num_outputs - num_binary_treatments
 
         # Load propensity weights if they exist
         if b_propensity_weight:
@@ -170,6 +178,7 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
                 logging.info("Using specifications for {}: {}".format(net_name, spec))
                 dropout_rate = spec[0]
                 memory_multiplier = spec[1]
+                #num_epochs = 10
                 num_epochs = spec[2]
                 minibatch_size = spec[3]
                 learning_rate = spec[4]
@@ -178,79 +187,44 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
 
             model_folder = os.path.join(MODEL_ROOT, net_name)
 
-            # transform data to tf format
-            global_batch_size = minibatch_size * strategy.num_replicas_in_sync
-            tf_data_train = data_process.convert_to_tf_dataset(training_processed, global_batch_size)
-            tf_data_valid = data_process.convert_to_tf_dataset(validation_processed, global_batch_size)
-            tf_data_test = data_process.convert_to_tf_dataset(test_processed, global_batch_size)
-            
-            # distribute them
-            tf_data_train = strategy.experimental_distribute_dataset(tf_data_train)
-            tf_data_valid = strategy.experimental_distribute_dataset(tf_data_valid)
-            tf_data_test = strategy.experimental_distribute_dataset(tf_data_test)
-
             # construct model parameters
             hidden_layer_size = int(memory_multiplier * num_features)
             model_parameters = {'net_name': net_name,
                     'experiment_name': expt_name,
-                    'training_dataset': tf_data_train,
-                    'validation_dataset': tf_data_valid,
-                    'test_dataset': tf_data_test,
+                    'training_dataset': training_processed,
+                    'validation_dataset': validation_processed,
+                    'test_dataset': test_processed,
                     'dropout_rate': dropout_rate,
                     'input_size': num_features,
                     'output_size': num_outputs,
+                    'treatment_only': b_use_actions_only,
+                    'time_steps': num_timesteps,
                     'hidden_layer_size': hidden_layer_size,
                     'num_epochs': num_epochs,
                     'minibatch_size': minibatch_size,
-                    'global_batch_size': global_batch_size,
                     'learning_rate': learning_rate,
                     'max_norm': max_norm,
                     'model_folder': model_folder,
                     'hidden_activation': hidden_activation,
                     'output_activation': output_activation,
                     'backprop_length': 60,  # backprop over 60 timesteps for truncated backpropagation through time
-                    'softmax_size': 0, #not used in this paper, but allows for categorical actions
+                    'num_continuous': num_continuous_treatments, # number of continuous treatments
+                    'softmax_size': 20 * num_continuous_treatments, #equals to bins * num_continuous
+                    'predict_size': num_outputs if num_continuous_treatments == 0 else num_outputs + 19 * num_continuous_treatments,
                     'performance_metric': 'xentropy' if output_activation == 'sigmoid' else 'mse'}
 
+            if net_name == "rnn_propensity_weighted":
+                history = predictive_model_train(model_parameters)
+            elif "treatment_rnn" in net_name:
+                history = propensity_model_train(model_parameters)
+            else:
+                raise ValueError("Unrecognised network type to train")
 
-            #with strategy.scope():
-            # stpe1: construct model
-            #tf.keras.backend.clear_session()
-            with strategy.scope():
-                model = model_process.create_model(model_parameters)
-                model.summary()
-
-                # step2: train model
-                #model_parameters['optimizer'] = optimizers.Adam(learning_rate=learning_rate)
-                #model_parameters['train_metric'] = metrics.MeanSquaredError(name='train_mse')
-                #model_parameters['valid_loss'] = metrics.Mean(name='valid_loss')
-                #model_parameters['valid_metric'] = metrics.MeanSquaredError(name='valid_mse')
-                #model_parameters['loss_func'] = model_process.CustomLoss(model_parameters['performance_metric'], strategy.num_replicas_in_sync, global_batch_size)
-                #Train = model_process.TrainModule(model, model_parameters)
-                #Train = TrainModule(model_parameters)
-            #  end scope
-            model_process.train_model(model, model_parameters)
-            #history = Train.train_model(model_parameters)
-            # history = model_process.train_model(model, model_parameters)
-
-            # step3: save final model and history
-            model_process.save_model(model, model_parameters, history, option='final')
-
-            # step4: evaluate model using test data
-            new_model = model_process.create_model(model_parameters)
-            _, mse = Train.eval_step(new_model)
-            
-            mse_dict[net_name] = mse
-
-            # loop control and hyperparameter save
-            #hyperparam_count = len(hyperparam_opt.columns)
             hyperparam_count += 1
             if hyperparam_count >= max_hyperparam_runs:
                 break
 
-        logging.info("Done")
-        #logging.info(hyperparam_opt.T)
-
-        # Flag optimal params
-    #logging.info(opt_params)
-    return mse_dict
+        # evaluate model if net_names = ["rnn_propensity_weighted"]
+        if net_name == "rnn_propensity_weighted":
+            rmse = model_evaluate(model_parameters)
+            print('RMSE after restoring the saved model without strategy: {}'.format(rmse))

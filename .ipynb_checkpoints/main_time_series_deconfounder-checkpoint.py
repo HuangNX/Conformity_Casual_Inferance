@@ -16,7 +16,7 @@ import numpy as np
 
 from simulated_autoregressive import AutoregressiveSimulation
 from time_series_deconfounder import test_time_series_deconfounder
-from utils.evaluation_utils import load_data_from_file, write_results_to_file
+from utils.evaluation_utils import load_data, save_data
 
 
 def init_arg():
@@ -47,14 +47,14 @@ if __name__ == '__main__':
     # dataset = autoregressive.generate_dataset(5000, 31)
     
     # Load data
-    dataset = load_data_from_file(args.data_filename)
+    dataset = load_data(args.data_filename)
     logging.info("Dataset loaded")
 
     if "predict" in args.data_filename:
         dataset_with_confounders_filename = '{}/{}_dataset_with_substitute_confounders_for_predict_v3.txt'.format(args.results_dir,
                                                                                                args.exp_name)
     else:
-        dataset_with_confounders_filename = '{}/{}_dataset_with_substitute_confounders.txt'.format(args.results_dir,
+        dataset_with_confounders_filename = '{}/{}_dataset_with_substitute_confounders.h5'.format(args.results_dir,
                                                                                                args.exp_name)
     # write_results_to_file(dataset_with_confounders_filename, dataset)
     # logging.info("Dataset saved")

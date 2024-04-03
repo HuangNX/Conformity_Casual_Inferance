@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 
 def compute_mean_std(column):
     if np.all((column == 0) | (column == 1)) or len(np.unique(column)) == 1:
@@ -66,6 +65,7 @@ def get_dataset_normalize(dataset, scale_params, num_covariates, num_treatments)
 
     return dataset
 
+# 感觉这个名字应该要换，因为不只是在做数据集的划分
 def get_dataset_splits(dataset, train_index, val_index, test_index, use_predicted_confounders):
     if use_predicted_confounders:
         dataset_keys = ['previous_covariates', 'previous_treatments', 'covariates', 'treatments',
@@ -73,6 +73,12 @@ def get_dataset_splits(dataset, train_index, val_index, test_index, use_predicte
     else:
         dataset_keys = ['previous_covariates', 'previous_treatments', 'covariates', 'treatments', 'outcomes']
 
+    # data type transformation
+    for key in dataset.keys():
+        if key!='sequence_length':
+            dataset[key] = dataset[key].astype(np.float32)
+
+    # dataset split
     dataset_train = dict()
     dataset_val = dict()
     dataset_test = dict()

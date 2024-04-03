@@ -7,6 +7,7 @@ import time
 from tqdm import tqdm
 import tensorflow as tf
 from tensorflow.keras import *
+from tensorflow.keras.callbacks import EarlyStopping, TerminateOnNaN
 
 from utils.predictive_checks_utils import compute_test_statistic_all_timesteps
 from utils.rnn_utils import *
@@ -173,8 +174,13 @@ class FactorModel:
             else:
                 self.num_continuous_treatments += 1
 
-        tf_train_data = convert_to_tf_dataset(dataset_train, self.batch_size)
-        tf_val_data = convert_to_tf_dataset(dataset_val, self.batch_size)
+        self.global_batch_size = self.batch_size*strategy.num_replicas_in_sync
+        #tf_train_data = convert_to_tf_dataset(dataset_train, global_batch_size)
+        #tf_val_data = convert_to_tf_dataset(dataset_val, global_batch_size)
+        # use data generator
+        train_gen = DataGenerator(dataset_train, self.global_batch_size)
+        val_gen = DataGenerator(dataset_val, self.global_batch_size)
+        
 
         with strategy.scope():
             # build model
@@ -189,14 +195,30 @@ class FactorModel:
                       'continuous_combined_output':'accuracy'}) 
 
         # begin training
+        # set up early stop callback
+        #early_stopping_callback = EarlyStopping(monitor='val_loss',
+        #                                patience=10,
+        #                                verbose=1, 
+        #                                mode='min', 
+        #                                restore_best_weights=True)
+        # set up nan callback
+        nan_terminate_callback = TerminateOnNaN()
+        callbacks = nan_terminate_callback
+        # Train model
         start_time = time.time()
-        history = self.model.fit(tf_train_data, 
+        history = self.model.fit(train_gen, 
                             epochs=self.num_epochs, 
                             verbose=verbose, 
-                            validation_data=tf_val_data)
+                            validation_data=val_gen,
+                            callbacks=callbacks)
+
         end_time = time.time()
         training_time = end_time - start_time
         logging.info("Training time: {:.2f} seconds".format(training_time))
+
+        ## Save the trained model
+        #self.model.save('results/factor_model', save_format="tf")
+        #logging.info('export saved model.')
 
     def get_optimizer(self):
         optimizer = optimizers.Adam(learning_rate=self.learning_rate)
@@ -211,9 +233,26 @@ class FactorModel:
         return rnn_input, binary_treatment_prob_predictions, continuous_treatment_prob_predictions, hidden_confounders
     
     def compute_hidden_confounders(self, dataset):
+        # load model
+        #if not hasattr(self, 'model'):
+        #    self.model = models.load_model('results/factor_model', compile=False)
+        #    self.model.compile(optimizer=self.get_optimizer(), 
+        #          loss={'binary_combined_output':BinaryLoss(self.num_covariates + self.num_treatments, self.num_continuous_treatments),
+        #                'continuous_combined_output':ContinuousLoss(self.num_covariates + self.num_treatments, self.num_continuous_treatments),
+        #               'hidden_confounders':None}, 
+        #          metrics={'binary_combined_output':'accuracy',
+        #                  'continuous_combined_output':'accuracy'}) 
 
-        tf_data = convert_to_tf_dataset(dataset, self.batch_size)
-        predictions = self.model.predict(tf_data)
-        _, _, _, hidden_confounders = self.split_output(predictions)
+        #    #tf_data = convert_to_tf_dataset(dataset, self.batch_size)
+        #    self.global_batch_size = self.batch_size*strategy.num_replicas_in_sync
+        
+        gen = DataGenerator(dataset, self.global_batch_size)
+        hidden_confounders = []
+        for i in range(len(gen)):
+            features, _ = gen[i]
+            _, _, batch_confounder = self.model.predict(features)
+            hidden_confounders.extend(batch_confounder)
+        hidden_confounders = np.array(hidden_confounders)
+        #_, _, _, hidden_confounders = self.split_output(predictions)
 
         return hidden_confounders

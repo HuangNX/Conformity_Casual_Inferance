@@ -1,5 +1,7 @@
-﻿import tensorflow as tf
+﻿import numpy as np
+import tensorflow as tf
 from tensorflow.keras import *
+from tensorflow.keras.utils import Sequence
 
 # data module #################################################
 def map_function(features):
@@ -15,20 +17,59 @@ def map_function(features):
     return inputs, outputs
 
 def convert_to_tf_dataset(dataset, batch_size):
-    key_map = {'previous_covariates': dataset['previous_covariates'],
-               'previous_treatments': dataset['previous_treatments'],
-               'covariates': dataset['covariates'],
-               'treatments': dataset['treatments'],
-               'sequence_length': dataset['sequence_length']}
+    #key_map = {'previous_covariates': dataset['previous_covariates'],
+    #           'previous_treatments': dataset['previous_treatments'],
+    #           'covariates': dataset['covariates'],
+    #           'treatments': dataset['treatments'],
+    #           'sequence_length': dataset['sequence_length']}
+
+    features = {
+        "previous_covariates": dataset['previous_covariates'],
+        "previous_treatments": dataset['previous_treatments'],
+        "covariates": dataset['covariates']
+        }
+
+    outputs = dataset['treatments']
 
     #from_tensor_slices:切片; shuffle:随机打乱; batch:批次组合; prefetch:提前准备（预取）数据
-    tf_dataset = tf.data.Dataset.from_tensor_slices(key_map)\
-                .map(map_function)\
-                .batch(batch_size) \
-                .prefetch(tf.data.experimental.AUTOTUNE)
-    #.shuffle(buffer_size = 1000)\
+    # 两个策略提升性能：
+    # 1.使用 map 时设置num_parallel_calls 让数据转换过程多进行执行；
+    # 2.使用 map转换时，先batch, 然后采用向量化的转换方法对每个batch进行转换。
+    #tf_dataset = tf.data.Dataset.from_tensor_slices(key_map)\
+    #            .batch(batch_size) \
+    #            .map(map_function, num_parallel_calls = tf.data.experimental.AUTOTUNE)\
+    #            .prefetch(tf.data.experimental.AUTOTUNE)
+    tf_dataset = tf.data.Dataset.from_tensor_slices((features, outputs))
+    tf_dataset = tf_dataset.batch(batch_size)
+    #tf_dataset = tf_dataset.map(map_function, num_parallel_calls = tf.data.experimental.AUTOTUNE)
+    tf_dataset = tf_dataset.prefetch(tf.data.experimental.AUTOTUNE)
+    #.shuffle(buffer_size = 1000)
 
     return tf_dataset
+
+# Data Genrator
+class DataGenerator(Sequence):
+    def __init__(self, dataset, batch_size):
+        self.dataset = dataset
+        self.batch_size = batch_size
+
+    def __len__(self):
+        # 计算每一个epoch中的批次数量
+        return int(np.ceil(len(self.dataset['treatments']) / float(self.batch_size)))
+
+    def __getitem__(self, idx):
+        batch_start = idx * self.batch_size
+        batch_end = (idx + 1) * self.batch_size
+        
+        features = {
+            "previous_covariates": self.dataset['previous_covariates'][batch_start:batch_end],
+            "previous_treatments": self.dataset['previous_treatments'][batch_start:batch_end],
+            "covariates": self.dataset['covariates'][batch_start:batch_end]
+        }
+
+        outputs = self.dataset['treatments'][batch_start:batch_end]
+
+        return features, outputs
 
 # Loss function module ##########################################
 # defined loss function
@@ -111,6 +152,15 @@ class DropoutLSTMCell(tf.keras.layers.Layer):
     def get_initial_state(self, inputs=None, batch_size=None, dtype=None):
         return self.lstm_cell.get_initial_state(inputs=inputs, batch_size=batch_size, dtype=dtype)
 
+    def get_config(self):
+        config = super(DropoutLSTMCell, self).get_config()
+        config.update({
+            'units': self.units,
+            'dropout': self.dropout,
+            'recurrent_dropout': self.recurrent_dropout,
+        })
+        return config
+
 # auto regressive layer
 class AutoregressiveLSTMCell(tf.keras.layers.Layer):
     def __init__(self, lstm_cell, output_size, **kwargs):
@@ -131,6 +181,14 @@ class AutoregressiveLSTMCell(tf.keras.layers.Layer):
         initial_lstm_state = self.lstm_cell.get_initial_state(inputs, batch_size, dtype)
         initial_output = tf.zeros((batch_size, self.output_size), dtype=dtype)
         return [initial_lstm_state, initial_output]
+
+    def get_config(self):  
+        config = super(AutoregressiveLSTMCell, self).get_config()
+        config.update({
+        'output_size': self.output_size,
+        'lstm_cell_config': self.lstm_cell.get_config()  # 保存内部 LSTM 单元的配置
+        })
+        return config
 
 # trainable initial input layer
 class TrainableInitialInput(tf.keras.layers.Layer):
@@ -153,6 +211,12 @@ class TrainableInitialInput(tf.keras.layers.Layer):
         expanded_init_input = tf.tile(self.trainable_init_input, [batch_size, 1, 1])
         return expanded_init_input
 
+    def get_config(self):  
+        config = super(TrainableInitialInput, self).get_config()
+        config.update({
+        'output_dim': self.output_dim
+        })
+        return config
 
 # Other useful functions ########################################
 def compute_sequence_length(sequence):
