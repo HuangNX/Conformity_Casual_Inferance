@@ -1,4 +1,4 @@
-﻿import numpy as np
+import numpy as np
 import pandas as pd
 import os
 import logging
@@ -11,6 +11,7 @@ import tensorflow as tf
 from tensorflow.keras import *
 from rmsn.libs.data_process import convert_to_tf_dataset, convert_to_tf_dataset_via_generator
 from rmsn.libs.rmsn_model import create_model, CustomLoss
+from rmsn.configs import strategy
 # Set up mirrored strategy
 strategy = tf.distribute.MirroredStrategy()
 print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
@@ -118,7 +119,8 @@ def propensity_model_train(params):
             active_entries1, active_entries2 = tf.split(active_entries, [num_continuous, output_size - num_continuous], axis=-1)
 
             multiclass_loss = multiclass_loss_func.train_call(multiclass_outputs, multiclass_preds, active_entries1, weights)
-            binary_loss = binary_loss_func.train_call(binary_outputs, binary_preds, active_entries2, weights)
+            # 加入判断，处理没有policy的情况
+            binary_loss = binary_loss_func.train_call(binary_outputs, binary_preds, active_entries2, weights) if num_continuous < output_size else 0
             total_loss = multiclass_loss + binary_loss
 
         gradients = tape.gradient(total_loss, model.trainable_variables)
@@ -151,7 +153,7 @@ def propensity_model_train(params):
         multiclass_preds, binary_preds = tf.split(predictions, [softmax_size, predict_size - softmax_size], axis=-1)
 
         multiclass_loss = multiclass_loss_func.valid_call(multiclass_outputs, multiclass_preds)
-        binary_loss = binary_loss_func.valid_call(binary_outputs, binary_preds)
+        binary_loss = binary_loss_func.valid_call(binary_outputs, binary_preds) if num_continuous < output_size else 0
         total_loss = multiclass_loss + binary_loss
         
         valid_loss.update_state(total_loss)

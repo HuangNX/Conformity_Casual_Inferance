@@ -52,3 +52,12 @@ python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data'  --res
 python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data'  --results_dir='results' --data_filename='results/all_data_dataset_with_substitute_confounders.h5' --num_substitute_hidden_confounders=1
 
 python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data_v2'  --results_dir='results' --data_filename='../data/all_data_dataset_with_substitute_confounders.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data_add_ent'  --results_dir='results' --data_filename='../data/sample_32w_add_ent.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data_add_ent'  --results_dir='results' --data_filename='../data/all_data_add_ent_dataset_with_substitute_confounders.h5' --num_substitute_hidden_confounders=1
+
+-- 选择2020年样本跑一次
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data_2020'  --results_dir='results' --data_filename='../data/sample_32w.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data_2020'  --results_dir='results' --data_filename='results/all_data_2020_dataset_with_substitute_confounders.h5' --num_substitute_hidden_confounders=1

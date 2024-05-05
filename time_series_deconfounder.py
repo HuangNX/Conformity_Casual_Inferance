@@ -87,17 +87,17 @@ def train_factor_model(dataset_train, dataset_val, dataset, num_confounders, hyp
     model.train(dataset_train, dataset_val)
     predicted_confounders = model.compute_hidden_confounders(dataset)
     
-    #p_value = model.eval_predictive_checks(dataset_val)
-    #plt.figure(figsize=(10, 6))
-    #plt.plot(p_value, marker='o', linestyle='-')
-    #plt.title('Predictive Checks P-Values Over Time')
-    #plt.xlabel('Time')
-    #plt.ylabel('P-Value')
-    #plt.grid(True)
+#     p_value = model.eval_predictive_checks(dataset_val)
+#     plt.figure(figsize=(10, 6))
+#     plt.plot(p_value, marker='o', linestyle='-')
+#     plt.title('Predictive Checks P-Values Over Time')
+#     plt.xlabel('Time')
+#     plt.ylabel('P-Value')
+#     plt.grid(True)
 
-    ## 保存图像到本地文件
-    #plt.savefig('../p_values_plot.png')
-    #plt.close()  # 关闭图形，避免在 Jupyter 等环境中重复显示
+#     # 保存图像到本地文件
+#     plt.savefig('../p_values_plot.png')
+#     plt.close()  # 关闭图形，避免在 Jupyter 等环境中重复显示
 
     return predicted_confounders
 
@@ -108,14 +108,14 @@ def train_rmsn(dataset_map, model_name, b_use_predicted_confounders):
     if not os.path.exists(MODEL_ROOT):
         os.mkdir(MODEL_ROOT)
         print("Directory ", MODEL_ROOT, " Created ")
-    else:
-        # Need to delete previously saved model.
-        shutil.rmtree(MODEL_ROOT)
-        os.mkdir(MODEL_ROOT)
-        print("Directory ", MODEL_ROOT, " Created ")
+    #else:
+    #    # Need to delete previously saved model.
+    #    shutil.rmtree(MODEL_ROOT)
+    #    os.mkdir(MODEL_ROOT)
+    #    print("Directory ", MODEL_ROOT, " Created ")
 
-    rnn_fit(dataset_map=dataset_map, networks_to_train='propensity_networks', MODEL_ROOT=MODEL_ROOT,
-            b_use_predicted_confounders=b_use_predicted_confounders)
+    #rnn_fit(dataset_map=dataset_map, networks_to_train='propensity_networks', MODEL_ROOT=MODEL_ROOT,
+    #        b_use_predicted_confounders=b_use_predicted_confounders)
 
     propensity_generation(dataset_map=dataset_map, MODEL_ROOT=MODEL_ROOT,
                            b_use_predicted_confounders=b_use_predicted_confounders)
@@ -174,15 +174,21 @@ def compute_ale(dataset, model_name, b_use_predicted_confounders, features):
     # compute accumulated local effects (ALE)
     model_name = model_name + '_use_confounders_' + str(b_use_predicted_confounders)
     model_root = os.path.join('results', model_name)
+    # config = {'covariate_cols':['gender','age','income','weekday_0','weekday_1','weekday_2','weekday_3','weekday_4', 'weekday_5', 'weekday_6',
+    #               'voluntary','festivals','year_0','year_1','year_2','edu','married','dist_yes','density', 'spatial_ent','temperal_ent','flow','temperature','percipit'],
+    #          'treatment_cols':['conformity','E1','E2'],
+    #          'confounder_cols':['confounder_{}'.format(i) for i in range(dataset['predicted_confounders'].shape[2])]}
+    #config = {'covariate_cols':['gender','age','income','weekday_0','weekday_1','weekday_2','weekday_3','weekday_4', 'weekday_5', 'weekday_6',
+    #            'voluntary','festivals','year_0','year_1','year_2','density','landusemix','road_density','center','subway','edu',
+    #            'married','dist_yes','temperature','percipit'],
+    #        'treatment_cols':['conformity','E1','E2'],
+    #        'confounder_cols':['confounder_{}'.format(i) for i in range(dataset['predicted_confounders'].shape[2])]
+    #        }
     config = {'covariate_cols':['gender','age','income','weekday_0','weekday_1','weekday_2','weekday_3','weekday_4', 'weekday_5', 'weekday_6',
-                  'voluntary','festivals','year_0','year_1','year_2','density','landusemix','road_density','center','subway','edu',
-                  'married','dist_yes','temperature','percipit'],
-              'treatment_cols':['conformity','E1','E2'],
-              'confounder_cols':['confounder_{}'.format(i) for i in range(dataset['predicted_confounders'].shape[2])]}
-    # config = {'covariate_cols':['gender','age','income3','weekday_0','weekday_1','weekday_2','weekday_3',\
-    #                       'weekday_4', 'weekday_5', 'weekday_6','sprtransp','spring','precip', 'voluntary'],
-    #           'treatment_cols':['conformity','restrict','open'],
-    #           'confounder_cols':['confounder_{}'.format(i) for i in range(dataset['predicted_confounders'].shape[2])]}
+                'voluntary','festivals','year_0','year_1','year_2','density','edu',
+                'married','dist_yes','temperature','percipit','E1','E2'],
+            'treatment_cols':['conformity'],
+            }
     
     # shape of data
     num_samples, length, num_covariates = dataset['covariates'].shape
@@ -280,25 +286,48 @@ def test_time_series_deconfounder(dataset, num_substitute_confounders, exp_name,
                                   factor_model_hyperparams_file, model_prediction_file, b_hyperparm_tuning=False):
     logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
-    #shuffle_split = ShuffleSplit(n_splits=1, test_size=0.1, random_state=10)
-    #train_index, test_index = next(shuffle_split.split(dataset['covariates'][:, :, 0]))
-    #shuffle_split = ShuffleSplit(n_splits=1, test_size=0.11, random_state=10)
-    #train_index, val_index = next(shuffle_split.split(dataset['covariates'][train_index, :, 0]))
+    def obtain_dataset(dataset, column_index, selection=1):
+        dataset_part = {}
+        selected_indices = np.where(dataset['covariates'][:, :, column_index] == selection)[0]
+        unique_selected_indices = np.unique(selected_indices)
+        for key in dataset.keys():
+            dataset_part[key] = dataset[key][unique_selected_indices]
+        return dataset_part
+
+    # sampling from big dataset
+    def dataset_sampling(dataset, num_select=32000):
+        num_samples = dataset['covariates'].shape[0]
+        # Generate 32,000 random and unique indexes
+        indices = np.random.choice(num_samples, num_select, replace=False)
+        # Use these indexes to extract a corresponding sample from each array
+        dataset = {key: value[indices] for key, value in dataset.items()}
+        return dataset
+
+    #选择2020年的数据单独跑一次
+    # column_2020 = 13  # index of year 2020 indicator
+    # dataset = obtain_dataset(dataset, column_2020)
+
+    # 数据采样
+    # dataset = dataset_sampling(dataset, num_select=32000)
+    
+    shuffle_split = ShuffleSplit(n_splits=1, test_size=0.1, random_state=10)
+    train_index, test_index = next(shuffle_split.split(dataset['covariates'][:, :, 0]))
+    shuffle_split = ShuffleSplit(n_splits=1, test_size=0.11, random_state=10)
+    train_index, val_index = next(shuffle_split.split(dataset['covariates'][train_index, :, 0]))
     
     # ############################# Factor Model #################################################################
     #FE = Feature_Engineering(dataset, for_factor_model=True)
     #dataset_map = FE.get_dataset_splits(train_index, val_index, test_index, use_predicted_confounders=False)
-    #dataset_map = get_dataset_splits(dataset, train_index, val_index, test_index, use_predicted_confounders=False)
      
     #dataset_train = dataset_map['training_data']
     #dataset_val = dataset_map['validation_data']
 
     #logging.info("Fitting factor model")
     #predicted_confounders = train_factor_model(dataset_train, dataset_val,
-    #                                        dataset,
-    #                                        num_confounders=num_substitute_confounders,
-    #                                        b_hyperparameter_optimisation=b_hyperparm_tuning,
-    #                                        hyperparams_file=factor_model_hyperparams_file)
+    #                                      dataset,
+    #                                      num_confounders=num_substitute_confounders,
+    #                                      b_hyperparameter_optimisation=b_hyperparm_tuning,
+    #                                      hyperparams_file=factor_model_hyperparams_file)
     ##print(predicted_confounders)
     #dataset['predicted_confounders'] = predicted_confounders
     ##write_results_to_file(dataset_with_confounders_filename, dataset)
@@ -306,16 +335,16 @@ def test_time_series_deconfounder(dataset, num_substitute_confounders, exp_name,
     #logging.info('Finishing saving dataset with confounders!')
 
     # ############################# Recurrent Marginal Network #################################################################
-    #FE = Feature_Engineering(dataset, for_factor_model=False)
+    FE = Feature_Engineering(dataset, for_factor_model=False)
     #dataset_map = FE.get_dataset_splits(train_index, val_index, test_index, use_predicted_confounders=False)
 
     #logging.info('Fitting counfounded recurrent marginal structural networks.')
-    #rmse_without_confounders = train_rmsn(dataset_map, 'rmsn_' + str(exp_name), b_use_predicted_confounders=False)
+    #train_rmsn(dataset_map, 'rmsn_' + str(exp_name), b_use_predicted_confounders=False)
 
-    #dataset_map = FE.get_dataset_splits(train_index, val_index, test_index, use_predicted_confounders=True)
-    #logging.info(
-    #    'Fitting deconfounded (D_Z = {}) recurrent marginal structural networks.'.format(num_substitute_confounders))
-    #train_rmsn(dataset_map, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True)
+    dataset_map = FE.get_dataset_splits(train_index, val_index, test_index, use_predicted_confounders=True)
+    logging.info(
+    'Fitting deconfounded (D_Z = {}) recurrent marginal structural networks.'.format(num_substitute_confounders))
+    train_rmsn(dataset_map, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True)
     
     #logging.info('Predicting treatment effects of conformity factor.')
     #results = predict_effects(dataset, 'rmsn_' + str(exp_name), calculate_counterfactual=False, b_use_predicted_confounders=True)
@@ -326,31 +355,52 @@ def test_time_series_deconfounder(dataset, num_substitute_confounders, exp_name,
     
     # ############################# Accumulated Local Effects #################################################################
     # plot ale
-    # using only 2020 data [12-year2019, 13-year2020, 14-year2023]
-    column_index = 13  # index of year 2020 indicator
-    selected_indices = np.where(dataset['covariates'][:, :, column_index] == 1)[0]
-    unique_selected_indices = np.unique(selected_indices)
-    for key in dataset.keys():
-        dataset[key] = dataset[key][unique_selected_indices]
 
-    # sampling from big dataset
-    num_samples = dataset['previous_covariates'].shape[0]
-    # Generate 32,000 random and unique indexes
-    indices = np.random.choice(num_samples, 32000, replace=False)
+    #split 3 years date [12-year2019, 13-year2020, 14-year2023]
+    # column_2019 = 12  # index of year 2019 indicator
+    # column_2020 = 13  # index of year 2020 indicator
+    # column_2023 = 14  # index of year 2023 indicator
+    ### 人群异质性
+    ##column_gender = 0; column_age = 1; column_income = 2;
 
-    # Use these indexes to extract a corresponding sample from each array
-    dataset = {key: value[indices] for key, value in dataset.items()}
+    # dataset19 = obtain_dataset(dataset, column_2019)
+    # dataset20 = obtain_dataset(dataset, column_2020)
+    # dataset23 = obtain_dataset(dataset, column_2023)
 
     #logging.info('Compute Single Accumulated Local Effects (ALE), draw and save the ale plot')
-    ###dataset1 = copy.deepcopy(dataset)
-    #single_ale_fig, ale = compute_ale(dataset, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True, features=['conformity'])
-    #single_ale_fig.savefig('results/image/all_sample_conformity_ale_2023.png')
-    # delete policy, see effect
-    dataset['treatments'][:, :, 1:] = 0
-    logging.info('Compute Time Windows Accumulated Local Effects (ALE), draw and save the ale plot')
-    window_ale_fig, ale = compute_ale(dataset, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True, features=['week', 'conformity'])
-    window_ale_fig.savefig('results/image/all_sample_conformity_time_ale_without_policy.png')
+    #single_ale_fig, ale = compute_ale(dataset19, 'rmsn_' + str(exp_name), b_use_predicted_confounders=False, features=['conformity'])
+    #np.save("../data/result_data/raw_ale_2019_no_confounder.npy", ale)
+    #single_ale_fig, ale = compute_ale(dataset20, 'rmsn_' + str(exp_name), b_use_predicted_confounders=False, features=['conformity'])
+    #np.save("../data/result_data/raw_ale_2020_no_confounder.npy", ale)
+    #single_ale_fig, ale = compute_ale(dataset23, 'rmsn_' + str(exp_name), b_use_predicted_confounders=False, features=['conformity'])
+    #np.save("../data/result_data/raw_ale_2023_no_confounder.npy", ale)
+    #single_ale_fig.savefig('results/image/sample_only_20_conformity_ale.png')
+    #delete policy, see effect
+    #dataset['treatments'][:, :, 1:] = 0
+
+    # logging.info('Compute Time Windows Accumulated Local Effects (ALE), draw and save the ale plot')
+    # window_ale_fig, ale2019 = compute_ale(dataset19, 'rmsn_' + str(exp_name), b_use_predicted_confounders=False, features=['week', 'conformity'])
+    # np.save("../data/result_data/raw_week_ale_2019_no_confounder.npy", ale2019.filled(np.nan))
+    # # window_ale_fig.savefig('results/image/all_sample_conformity_time_ale_2019_add_ent.png')
+    # window_ale_fig, ale2020 = compute_ale(dataset, 'rmsn_' + str(exp_name), b_use_predicted_confounders=False, features=['week', 'conformity'])
+    # np.save("../data/result_data/raw_week_ale_2020_no_confounder.npy", ale2020.filled(np.nan))
+    # # window_ale_fig.savefig('results/image/sample_only_20_conformity_time_ale.png')
+    # window_ale_fig, ale2023 = compute_ale(dataset23, 'rmsn_' + str(exp_name), b_use_predicted_confounders=False, features=['week', 'conformity'])
+    # np.save("../data/result_data/raw_week_ale_2023_no_confounder.npy", ale2023.filled(np.nan))
+    # window_ale_fig.savefig('results/image/all_sample_conformity_time_ale_2023_add_ent.png')
+    #收入异质性
+    #for income_level in range(5):
+    #    dataset_subincome = obtain_dataset(dataset, column_income, selection=income_level)
+    #    dataset19 = obtain_dataset(dataset_subincome, column_2019)
+    #    single_ale_fig, ale = compute_ale(dataset19, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True, features=['conformity'])
+    #    np.save("../data/raw_ale_19_income_{}.npy".format(income_level), ale)
+    #    dataset20 = obtain_dataset(dataset_subincome, column_2020)
+    #    single_ale_fig, ale = compute_ale(dataset20, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True, features=['conformity'])
+    #    np.save("../data/raw_ale_20_income_{}.npy".format(income_level), ale)
+    #    dataset23 = obtain_dataset(dataset_subincome, column_2023)
+    #    single_ale_fig, ale = compute_ale(dataset23, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True, features=['conformity'])
+    #    np.save("../data/raw_ale_23_income_{}.npy".format(income_level), ale)
 
     #logging.info('Compute Interactive Accumulated Local Effects (ALE), draw and save the ale plot')
     #interact_ale_fig, ale = compute_ale(dataset, 'rmsn_' + str(exp_name), b_use_predicted_confounders=True, features=['conformity','voluntary'])
-    #interact_ale_fig.savefig('results/image/all_sample_conformity_case_ale.png')
+    #interact_ale_fig.savefig('results/image/all_sample_conformity_case_ale_add_ent.png')

@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 import logging
 import os
+import shutil
 import argparse
 from rmsn.core_routine import propensity_model_train, predictive_model_train, model_evaluate
 from rmsn.libs.data_process import get_processed_data
@@ -28,7 +29,7 @@ logging.getLogger().setLevel(logging.INFO)
 # Defines specific parameters to train for - skips hyperparamter optimisation if so
 specifications = {
      'rnn_propensity_weighted': (0.1, 5, 100, 64, 0.005, 1.0),
-     'treatment_rnn_action_inputs_only': (0.1, 26, 100, 128, 0.005, 2.0),
+     'treatment_rnn_action_inputs_only': (0.1, 5, 100, 128, 0.005, 2.0),
      'treatment_rnn': (0.1, 5, 100, 64, 0.005, 1.0),
 } # decrease learning rate from 0.01 to 0.005 
 ####################################################################################################################
@@ -43,7 +44,7 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
     # Get the correct networks to train
     if networks_to_train == "propensity_networks":
         logging.info("Training propensity networks")
-        net_names = ['treatment_rnn_action_inputs_only', 'treatment_rnn']
+        net_names = ['treatment_rnn_action_inputs_only']
         #net_names = ['treatment_rnn']
 
     elif networks_to_train == "encoder":
@@ -71,26 +72,6 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
                       'treatment_rnn_action_inputs_only': ("tanh", 'sigmoid')
                       }
 
-    # Setup tensorflow
-    gpus = tf.config.list_physical_devices('GPU')
-    if gpus:
-        try:
-            # set TensorFlow to use all GPU
-            tf.config.set_visible_devices(gpus, 'GPU')
-            for gpu in gpus:
-                # set GPU memery growth
-                tf.config.experimental.set_memory_growth(gpu, True)
-            logging.info("Using GPU with memory growth")
-        except RuntimeError as e:
-            # Changing device settings after the program is running may cause errors
-            logging.info(e)
-    else:
-        # if no GPU，using CPU
-        logging.info("No GPU found, using CPU")
-
-    ## Create a distribution strategy
-    #strategy = tf.distribute.MirroredStrategy()
-    #print('Number of devices: %d' % strategy.num_replicas_in_sync)
 
     training_data = dataset_map['training_data']
     validation_data = dataset_map['validation_data']
@@ -186,6 +167,11 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
                 hidden_activation, output_activation = activation_map[net_name]
 
             model_folder = os.path.join(MODEL_ROOT, net_name)
+            if os.path.exists(model_folder):
+                # Need to delete previously saved model.
+                shutil.rmtree(model_folder)
+                os.mkdir(model_folder)
+                print("Directory ", model_folder, " Created ")
 
             # construct model parameters
             hidden_layer_size = int(memory_multiplier * num_features)

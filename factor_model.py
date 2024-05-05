@@ -11,17 +11,7 @@ from tensorflow.keras.callbacks import EarlyStopping, TerminateOnNaN
 
 from utils.predictive_checks_utils import compute_test_statistic_all_timesteps
 from utils.rnn_utils import *
-
-# setup gpu
-tf_device = 'gpu'
-if tf_device == "cpu":
-    # 强制使用CPU
-    tf.config.set_visible_devices([], 'GPU')
-else:
-    # 确保GPU可见（默认行为），并为每个GPU启用内存增长
-    gpus = tf.config.experimental.list_physical_devices('GPU')
-    for gpu in gpus:
-        tf.config.experimental.set_memory_growth(gpu, True)
+from rmsn.configs import strategy
 
 # mirrored strategy
 strategy = tf.distribute.MirroredStrategy()
