@@ -1,4 +1,4 @@
-"""
+﻿"""
 CODE ADAPTED FROM: https://github.com/sjblim/rmsn_nips_2018
 
 Implementation of Recurrent Marginal Structural Networks (R-MSNs):
@@ -7,12 +7,38 @@ Marginal Structural Networks", Advances in Neural Information Processing Systems
 """
 
 import os
+import logging
 import rmsn.libs.net_helpers as helpers
 import numpy as np
+import tensorflow as tf
 
 ROOT_FOLDER = os.path.dirname(os.path.realpath(__file__))
 RESULTS_FOLDER = os.path.join(ROOT_FOLDER, "results")
 
+# setup gpu
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    try:
+        # Optionally set memory growth on the selected GPU
+        #tf.config.set_visible_devices(gpus[0], 'GPU')
+        #tf.config.experimental.set_memory_growth(gpus[0], True)
+        #logging.info("Using GPU 0 with memory growth")
+
+        # set TensorFlow to use all GPU
+        tf.config.set_visible_devices(gpus, 'GPU')
+        for gpu in gpus:
+            # set GPU memery growth
+            tf.config.experimental.set_memory_growth(gpu, True)
+        logging.info("Using GPU with memory growth")
+    except RuntimeError as e:
+        # Changing device settings after the program is running may cause errors
+        logging.info(e)
+else:
+    # if no GPU，using CPU
+    logging.info("No GPU found, using CPU")
+
+#strategy = tf.distribute.MirroredStrategy(devices=["/gpu:0"])
+strategy = tf.distribute.MirroredStrategy()
 
 def get_parameters_from_string(serialisation_string):
 

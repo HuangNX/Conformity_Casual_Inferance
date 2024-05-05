@@ -226,6 +226,7 @@ def _first_order_quant_plot(ax, quantiles, ale, **kwargs):
 
     """
     ax.plot(_get_centres(quantiles), ale, **kwargs)
+    print(_get_centres(quantiles))
 
 
 def _second_order_quant_plot(

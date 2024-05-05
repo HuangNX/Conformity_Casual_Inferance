@@ -31,7 +31,10 @@ tf_upgrade_v2 \
     --intree Conformity_Casual_Inferance \
     --outtree regression_v2/ \
     --reportfile tree_report.txt
-    
+
+-- 生成数据
+python dataset_process.py --data_path "raw_data/conformity_result1_2020_yura_1.csv" "raw_data/conformity_result1_2020_yura_2.csv" --save_path "sample_32w_add_2020.h5" --generate True
+
 -- tf2 try
 python main_time_series_deconfounder.py --gamma=0.6 --exp_name='tf2_test'  --results_dir='results' --data_filename='../fullfeature_fillmean_1000.txt' --num_substitute_hidden_confounders=1
 python main_time_series_deconfounder.py --gamma=0.6 --exp_name='tf2_test'  --results_dir='results' --data_filename='results/tf2_test_dataset_with_substitute_confounders.txt' --num_substitute_hidden_confounders=1
@@ -52,3 +55,15 @@ python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data'  --res
 python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data'  --results_dir='results' --data_filename='results/all_data_dataset_with_substitute_confounders.h5' --num_substitute_hidden_confounders=1
 
 python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data_v2'  --results_dir='results' --data_filename='../data/all_data_dataset_with_substitute_confounders.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data_add'  --results_dir='results' --data_filename='../data/sample_32w_add.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data_add_ent'  --results_dir='results' --data_filename='../data/all_data_add_ent_dataset_with_substitute_confounders.h5' --num_substitute_hidden_confounders=1
+
+-- 选择2020年样本跑一次
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data_2020'  --results_dir='results' --data_filename='../data/sample_32w.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data_2020'  --results_dir='results' --data_filename='results/all_data_2020_dataset_with_substitute_confounders.h5' --num_substitute_hidden_confounders=1
+
+-- 全样本，no deconfounding
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data_no_deconfound'  --results_dir='results' --data_filename='../data/sample_32w.h5' --num_substitute_hidden_confounders=1

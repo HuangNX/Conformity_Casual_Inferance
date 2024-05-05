@@ -1,4 +1,5 @@
-﻿import numpy as np
+﻿from h5py._hl.dataset import sel
+import numpy as np
 import pandas as pd
 
 class Feature_Engineering:
@@ -26,11 +27,11 @@ class Feature_Engineering:
             self.scale_params[key] = []
 
         for covariate_id in range(num_covariates):
-
-            column = dataset['previous_covariates'][:, :, covariate_id]
-            # if feature is [0,1], then mean = 0, std = 1
-            pre_covariate_mean, pre_covariate_std = self.compute_mean_std(column)
-            self.scale_params['previous_covariates'].append(np.array([pre_covariate_mean, pre_covariate_std]))
+            if self.for_factor_model:
+                column = dataset['previous_covariates'][:, :, covariate_id]
+                # if feature is [0,1], then mean = 0, std = 1
+                pre_covariate_mean, pre_covariate_std = self.compute_mean_std(column)
+                self.scale_params['previous_covariates'].append(np.array([pre_covariate_mean, pre_covariate_std]))
 
             column = dataset['covariates'][:, :, covariate_id]
             covariate_mean, covariate_std = self.compute_mean_std(column)
@@ -56,18 +57,20 @@ class Feature_Engineering:
 
     def get_dataset_normalize(self, dataset, num_covariates, num_treatments):
         for covariate_id in range(num_covariates):
-            dataset['previous_covariates'][:, :, covariate_id] = \
-                (dataset['previous_covariates'][:, :, covariate_id] - self.scale_params['previous_covariates'][covariate_id, 0]) / \
-                self.scale_params['previous_covariates'][covariate_id, 1]
+            if self.for_factor_model:
+                dataset['previous_covariates'][:, :, covariate_id] = \
+                    (dataset['previous_covariates'][:, :, covariate_id] - self.scale_params['previous_covariates'][covariate_id, 0]) / \
+                    self.scale_params['previous_covariates'][covariate_id, 1]
 
             dataset['covariates'][:, :, covariate_id] = \
                 (dataset['covariates'][:, :, covariate_id] - self.scale_params['covariates'][covariate_id, 0]) / \
                 self.scale_params['covariates'][covariate_id, 1]
 
         for treatment_id in range(num_treatments):
-            dataset['previous_treatments'][:, :, treatment_id] = \
-                (dataset['previous_treatments'][:, :, treatment_id] - self.scale_params['previous_treatments'][treatment_id, 0]) / \
-                self.scale_params['previous_treatments'][treatment_id, 1]
+            if self.for_factor_model:
+                dataset['previous_treatments'][:, :, treatment_id] = \
+                    (dataset['previous_treatments'][:, :, treatment_id] - self.scale_params['previous_treatments'][treatment_id, 0]) / \
+                    self.scale_params['previous_treatments'][treatment_id, 1]
 
             dataset['treatments'][:, :, treatment_id] = \
                 (dataset['treatments'][:, :, treatment_id] - self.scale_params['treatments'][treatment_id, 0]) / \
@@ -89,11 +92,13 @@ class Feature_Engineering:
 
     def get_dataset_splits(self, train_index, val_index, test_index, use_predicted_confounders):
         self.use_predicted_confounders = use_predicted_confounders
-        if self.use_predicted_confounders:
-            dataset_keys = ['previous_covariates', 'previous_treatments', 'covariates', 'treatments',
-                            'predicted_confounders', 'outcomes']
-        else:
+        if self.for_factor_model:
             dataset_keys = ['previous_covariates', 'previous_treatments', 'covariates', 'treatments', 'outcomes']
+        else:
+            if self.use_predicted_confounders:
+                dataset_keys = ['covariates', 'treatments','predicted_confounders', 'outcomes']
+            else:
+                dataset_keys = ['covariates', 'treatments', 'outcomes']
 
         dataset_train = dict()
         dataset_val = dict()
@@ -141,8 +146,11 @@ class Feature_Engineering:
         # construct dataframe
         all_data = np.concatenate((self.dataset['covariates'].reshape(-1, len(config['covariate_cols'])), \
             self.dataset['treatments'].reshape(-1, len(config['treatment_cols']))), axis=1)
-        all_data = np.concatenate((all_data, self.dataset['predicted_confounders'].reshape(-1, len(config['confounder_cols']))), axis=1)
-        all_cols = config['covariate_cols'] + config['treatment_cols'] + config['confounder_cols']
+        if 'confounder_cols' in config:
+            all_data = np.concatenate((all_data, self.dataset['predicted_confounders'].reshape(-1, len(config['confounder_cols']))), axis=1)
+            all_cols = config['covariate_cols'] + config['treatment_cols'] + config['confounder_cols']
+        else:
+            all_cols = config['covariate_cols'] + config['treatment_cols']
 
         X = pd.DataFrame(all_data, columns=all_cols)
 

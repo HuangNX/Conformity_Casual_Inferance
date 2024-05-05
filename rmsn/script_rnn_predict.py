@@ -33,21 +33,21 @@ def rnn_predict(dataset, MODEL_ROOT, b_use_predicted_confounders, b_use_oracle_c
     logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
     # Setup tensorflow
-    gpus = tf.config.list_physical_devices('GPU')
-    if gpus:
-        try:
-            # set TensorFlow to use all GPU
-            tf.config.set_visible_devices(gpus, 'GPU')
-            for gpu in gpus:
-                # set GPU memery growth
-                tf.config.experimental.set_memory_growth(gpu, True)
-            logging.info("Using GPU with memory growth")
-        except RuntimeError as e:
-            # Changing device settings after the program is running may cause errors
-            logging.info(e)
-    else:
-        # if no GPU，using CPU
-        logging.info("No GPU found, using CPU")
+    # gpus = tf.config.list_physical_devices('GPU')
+    # if gpus:
+    #     try:
+    #         # set TensorFlow to use all GPU
+    #         tf.config.set_visible_devices(gpus, 'GPU')
+    #         for gpu in gpus:
+    #             # set GPU memery growth
+    #             tf.config.experimental.set_memory_growth(gpu, True)
+    #         logging.info("Using GPU with memory growth")
+    #     except RuntimeError as e:
+    #         # Changing device settings after the program is running may cause errors
+    #         logging.info(e)
+    # else:
+    #     # if no GPU，using CPU
+    #     logging.info("No GPU found, using CPU")
 
     configs = [
         load_optimal_parameters(net_name = 'rnn_propensity_weighted',MODEL_ROOT = MODEL_ROOT)
