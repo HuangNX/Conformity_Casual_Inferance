@@ -261,15 +261,16 @@ def _second_order_quant_plot(
         If more than 2 values were given for `n_interp`.
 
     """
+    # define colormap - let value 0 equals white
+    min_val = np.min(ale)
+    max_val = np.max(ale)
+    midpoint = abs(min_val) / (abs(max_val) + abs(min_val))
+    colors = [(0, "blue"), (midpoint, "white"), (1, "red")]
+    linear_cmap = mcolors.LinearSegmentedColormap.from_list("my_cmap", colors)
+    
     if compute_time_vary:
         print("plotting heatmap...")
-        # define colormap - let value 0 equals white
-        min_val = np.min(ale)
-        max_val = np.max(ale)
-        midpoint = abs(min_val) / (abs(max_val) + abs(min_val))
-        colors = [(0, "blue"), (midpoint, "white"), (1, "red")]
-        linear_cmap = mcolors.LinearSegmentedColormap.from_list("my_cmap", colors)
-        
+
         HM = ax.imshow(ale.T, aspect='auto', cmap=linear_cmap, origin='lower', vmin=min_val, vmax=max_val, **kwargs)
 #         # Create a meshgrid for plotting
 #         X, Y = np.meshgrid(quantiles_list[0], quantiles_list[1], indexing="ij")
@@ -286,7 +287,8 @@ def _second_order_quant_plot(
 
         X, Y = np.meshgrid(x, y, indexing="xy")
         ale_interp = scipy.interpolate.interp2d(centres_list[0], centres_list[1], ale.T)
-        CF = ax.contourf(X, Y, ale_interp(x, y), cmap="bwr", levels=30, alpha=0.7, **kwargs)
+        # CF = ax.contourf(X, Y, ale_interp(x, y), cmap="bwr", levels=30, alpha=0.7, **kwargs)
+        CF = ax.contourf(X, Y, ale_interp(x, y), cmap=linear_cmap, vmin=min_val, vmax=max_val, levels=30, alpha=0.7, **kwargs)
 
     if mark_empty and np.any(ale.mask):
         # Do not autoscale, so that boxes at the edges (contourf only plots the bin

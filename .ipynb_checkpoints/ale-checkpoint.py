@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """ALE plotting for continuous or categorical features."""
 from collections.abc import Iterable
 from functools import reduce
@@ -10,6 +10,7 @@ import matplotlib.colors as mcolors
 import numpy as np
 import pandas as pd
 import scipy
+import gc
 import seaborn as sns
 from loguru import logger
 from matplotlib.patches import Rectangle
@@ -225,6 +226,7 @@ def _first_order_quant_plot(ax, quantiles, ale, **kwargs):
 
     """
     ax.plot(_get_centres(quantiles), ale, **kwargs)
+    print(_get_centres(quantiles))
 
 
 def _second_order_quant_plot(
@@ -259,15 +261,16 @@ def _second_order_quant_plot(
         If more than 2 values were given for `n_interp`.
 
     """
+    # define colormap - let value 0 equals white
+    min_val = np.min(ale)
+    max_val = np.max(ale)
+    midpoint = abs(min_val) / (abs(max_val) + abs(min_val))
+    colors = [(0, "blue"), (midpoint, "white"), (1, "red")]
+    linear_cmap = mcolors.LinearSegmentedColormap.from_list("my_cmap", colors)
+    
     if compute_time_vary:
         print("plotting heatmap...")
-        # define colormap - let value 0 equals white
-        min_val = np.min(ale)
-        max_val = np.max(ale)
-        midpoint = abs(min_val) / (abs(max_val) + abs(min_val))
-        colors = [(0, "blue"), (midpoint, "white"), (1, "red")]
-        linear_cmap = mcolors.LinearSegmentedColormap.from_list("my_cmap", colors)
-        
+
         HM = ax.imshow(ale.T, aspect='auto', cmap=linear_cmap, origin='lower', vmin=min_val, vmax=max_val, **kwargs)
 #         # Create a meshgrid for plotting
 #         X, Y = np.meshgrid(quantiles_list[0], quantiles_list[1], indexing="ij")
@@ -284,7 +287,8 @@ def _second_order_quant_plot(
 
         X, Y = np.meshgrid(x, y, indexing="xy")
         ale_interp = scipy.interpolate.interp2d(centres_list[0], centres_list[1], ale.T)
-        CF = ax.contourf(X, Y, ale_interp(x, y), cmap="bwr", levels=30, alpha=0.7, **kwargs)
+        # CF = ax.contourf(X, Y, ale_interp(x, y), cmap="bwr", levels=30, alpha=0.7, **kwargs)
+        CF = ax.contourf(X, Y, ale_interp(x, y), cmap=linear_cmap, vmin=min_val, vmax=max_val, levels=30, alpha=0.7, **kwargs)
 
     if mark_empty and np.any(ale.mask):
         # Do not autoscale, so that boxes at the edges (contourf only plots the bin
@@ -379,15 +383,15 @@ def _first_order_ale_quant(predictor, train_set, feature, bins):
         The quantiles used.
 
     """
+   
     quantiles, _ = _get_quantiles(train_set, feature, bins)
-    logger.debug("Quantiles: {}.", quantiles)
-
     # Define the bins the feature samples fall into. Shift and clip to ensure we are
     # getting the index of the left bin edge and the smallest sample retains its index
     # of 0.
     indices = np.clip(
         np.digitize(train_set[feature], quantiles, right=True) - 1, 0, None
     )
+    logger.debug("Quantiles: {}.", quantiles)
 
     # Assign the feature quantile values to two copied training datasets, one for each
     # bin edge. Then compute the difference between the corresponding predictions
@@ -395,6 +399,7 @@ def _first_order_ale_quant(predictor, train_set, feature, bins):
     for offset in range(2):
         mod_train_set = train_set.copy()
         mod_train_set[feature] = quantiles[indices + offset]
+        #mod_train_set[feature] = mod_train_set[feature] + offset
         predictions.append(predictor(mod_train_set))
     # The individual effects.
     effects = predictions[1] - predictions[0]
@@ -483,7 +488,6 @@ def _second_order_ale_quant(predictor, train_set, features, bins, compute_time_v
                     np.digitize(train_set[week_indices][feature], quantiles, right=True) - 1, 0, None
                     )
 
-                # 对于每个 offset
                 for offset in range(2):
                     # 复制整个训练集
                     mod_train_set = train_set.copy()
@@ -493,6 +497,8 @@ def _second_order_ale_quant(predictor, train_set, features, bins, compute_time_v
 
                     # 对整个训练集进行预测并记录
                     predictions[offset][week_indices] = predictor(mod_train_set)[week_indices]
+
+                    del mod_train_set; gc.collect()
 
             effects = predictions[1] - predictions[0]
 
