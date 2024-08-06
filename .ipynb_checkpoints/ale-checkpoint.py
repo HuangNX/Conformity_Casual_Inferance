@@ -703,18 +703,23 @@ def _second_order_ale_quant(predictor, train_set, features, bins, compute_time_v
             ale = _get_centres(ale.T).T
             # 删除全0行或全0列
             ale = ale[1:,:]
-            # 计算每行的加权平均值
-            row_weighted_averages = np.sum(samples_grid * ale, axis=1) / np.sum(samples_grid, axis=1)
-            # 从ale的每一行减去相应的加权平均值
-            ale -= row_weighted_averages[:, np.newaxis]
+            ## 计算每行的加权平均值
+            #row_weighted_averages = np.sum(samples_grid * ale, axis=1) / np.sum(samples_grid, axis=1)
+            ## 从ale的每一行减去相应的加权平均值
+            #ale -= row_weighted_averages[:, np.newaxis]
+       
         else:
             # "week" 在第二个位置，对行应用 _get_centres
             ale = _get_centres(ale)
             ale=ale[:,1:]
-            # 计算每列的加权平均值
-            column_weighted_averages = np.sum(samples_grid * ale, axis=0) / np.sum(samples_grid, axis=0)
-            # 从ale的每一列减去相应的加权平均值
-            ale -= column_weighted_averages
+            ## 计算每列的加权平均值
+            #column_weighted_averages = np.sum(samples_grid * ale, axis=0) / np.sum(samples_grid, axis=0)
+            ## 从ale的每一列减去相应的加权平均值
+            #ale -= column_weighted_averages
+
+        # 计算整体的加权平均值
+        total_weighted_average = np.sum(samples_grid * ale) / np.sum(samples_grid)
+        ale -= total_weighted_average
     
     else:
         # Compute the cumulative sums.
@@ -920,6 +925,7 @@ def ale_plot(
                 features[0],
                 bins,
             )
+            quantiles_list = quantiles
             _ax_labels(ax, "Feature '{}'".format(features[0]), "")
             _ax_title(
                 ax,
@@ -974,4 +980,4 @@ def ale_plot(
             )
         )
     #plt.show()
-    return fig, ax, ale
+    return fig, ax, ale, quantiles_list

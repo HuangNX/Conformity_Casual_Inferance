@@ -27,11 +27,26 @@ logging.getLogger().setLevel(logging.INFO)
 
 # EDIT ME! ################################################################################################
 # Defines specific parameters to train for - skips hyperparamter optimisation if so
+# (dropout_rate, memory_multiplier, num_epochs, minibatch_size, learning_rate, max_norm)
+# base model
 specifications = {
-     'rnn_propensity_weighted': (0.1, 5, 100, 64, 0.005, 1.0),
-     'treatment_rnn_action_inputs_only': (0.1, 5, 100, 128, 0.005, 2.0),
-     'treatment_rnn': (0.1, 5, 100, 64, 0.005, 1.0),
-} # decrease learning rate from 0.01 to 0.005 
+'treatment_rnn_action_inputs_only': (0.1, 6, 200, 64, 0.005, 0.5),
+'treatment_rnn': (0.1, 3, 200, 64, 0.01, 0.5),
+'rnn_propensity_weighted': (0.1, 3, 200, 64, 0.01, 0.5),
+} 
+# add model
+# specifications = {
+#     'treatment_rnn_action_inputs_only': (0.2, 4, 200, 128, 0.005, 2.0),
+#     'treatment_rnn': (0.1, 3, 200, 64, 0.01, 0.5),
+#     'rnn_propensity_weighted': (0.1, 6, 200, 64, 0.01, 2.0),
+# }
+
+# default
+# specifications = {
+#     'treatment_rnn_action_inputs_only': (0.1, 5, 100, 128, 0.005, 2.0),
+#     'treatment_rnn': (0.1, 5, 100, 64, 0.005, 1.0),
+#     'rnn_propensity_weighted': (0.1, 5, 100, 64, 0.005, 1.0),
+# }
 ####################################################################################################################
 
 
@@ -44,8 +59,8 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
     # Get the correct networks to train
     if networks_to_train == "propensity_networks":
         logging.info("Training propensity networks")
-        net_names = ['treatment_rnn_action_inputs_only']
-        #net_names = ['treatment_rnn']
+        # net_names = ['treatment_rnn_action_inputs_only']
+        net_names = ['treatment_rnn']
 
     elif networks_to_train == "encoder":
         logging.info("Training R-MSN encoder")
@@ -58,7 +73,6 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
     else:
         raise ValueError("Unrecognised network type")
 
-    logging.info("Running hyperparameter optimisation")
 
     # Experiment name
     expt_name = "treatment_effects"
@@ -83,7 +97,9 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
     for net_name in net_names:
 
         # Re-run hyperparameter optimisation if parameters are not specified, otherwise train with defined params
-        max_hyperparam_runs = 3 if net_name not in specifications else 1
+        max_hyperparam_runs = 25 if net_name not in specifications else 1
+        if max_hyperparam_runs > 1:
+            logging.info("Running hyperparameter optimisation for {}".format(net_name))
 
         # Pull datasets
         b_predict_actions = "treatment_rnn" in net_name
@@ -147,7 +163,7 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
             if net_name not in specifications:
 
                 dropout_rate = np.random.choice([0.1, 0.2, 0.3, 0.4, 0.5])
-                memory_multiplier = np.random.choice([0.5, 1, 2, 3, 4])
+                memory_multiplier = np.random.choice([3, 4, 5, 6, 7])
                 num_epochs = 100
                 minibatch_size = np.random.choice([64, 128, 256])
                 learning_rate = np.random.choice([0.01, 0.005, 0.001])  #([0.01, 0.001, 0.0001])
@@ -168,13 +184,14 @@ def rnn_fit(dataset_map, networks_to_train, MODEL_ROOT, b_use_predicted_confound
 
             model_folder = os.path.join(MODEL_ROOT, net_name)
             if os.path.exists(model_folder):
-                # Need to delete previously saved model.
+               # Need to delete previously saved model.
                 shutil.rmtree(model_folder)
                 os.mkdir(model_folder)
                 print("Directory ", model_folder, " Created ")
 
             # construct model parameters
-            hidden_layer_size = int(memory_multiplier * num_features)
+            num_input_shape = num_features + 19 * num_continuous_treatments
+            hidden_layer_size = int(memory_multiplier * num_input_shape)
             model_parameters = {'net_name': net_name,
                     'experiment_name': expt_name,
                     'training_dataset': training_processed,

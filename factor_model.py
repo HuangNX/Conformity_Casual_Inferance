@@ -115,7 +115,7 @@ class FactorModel:
         num_inputs = self.num_treatments + self.num_covariates
 
         for sample_idx in range(num_samples):
-            combined_outputs, _ = self.model.predict(dataset)
+            combined_outputs,_,_ = self.model.predict(dataset)
             treatment_probability = combined_outputs[...,num_inputs:]
 
             test_statistic_sequence = compute_test_statistic_all_timesteps(target_treatments,
@@ -139,14 +139,14 @@ class FactorModel:
         rnn_input, binary_treatment_prob_predictions, continuous_treatment_prob_predictions, _ = self.split_output(outputs)
         mask = np.sign(np.max(np.abs(rnn_input), axis=2))
     
-        test_statistic_replicas = np.zeros(shape=(num_replications, max_sequence_length))
+        test_statistic_replicas = np.zeros(shape=(num_replications, self.max_sequence_length))
         for replication_idx in range(num_replications):
             # 这里我们生成伯努利实现，假设 treatment_prob_pred 已经是适当的形状
             treatment_replica = np.random.binomial(n=1, p=binary_treatment_prob_predictions)
             # 计算测试统计量
-            test_statistic_replicas[replication_idx] = compute_test_statistic(dataset, num_samples, treatment_replica, mask)
+            test_statistic_replicas[replication_idx] = self.compute_test_statistic(dataset, num_samples, treatment_replica, mask)
     
-        test_statistic_target = compute_test_statistic(dataset, num_samples, target_treatments, mask)
+        test_statistic_target = self.compute_test_statistic(dataset, num_samples, target_treatments, mask)
     
         p_values_over_time = np.mean(np.less(test_statistic_replicas, test_statistic_target).astype(np.int32), axis=0)
         return p_values_over_time

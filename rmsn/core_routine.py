@@ -184,8 +184,10 @@ def propensity_model_train(params):
         'multiclass_valid_metric':[],
         'binary_valid_metric':[]
         }
-    min_epochs = 70
+    min_epochs = 50
     min_loss = tf.constant(np.inf)
+    last_improve_epoch = 0
+    last_decay_epoch = 0
     b_stub_front = False
 
     for epoch in tf.range(1, epochs+1):
@@ -238,9 +240,23 @@ def propensity_model_train(params):
 
         # save optimal results
         total_valid_loss  = valid_loss.result()
+        # 使用训练集的loss作为优化目标
+        # total_valid_loss = train_loss
         if total_valid_loss < min_loss and epoch > min_epochs:
             min_loss = total_valid_loss
+            last_improve_epoch = epoch
             save_model(model, params, history, option='optimal')
+        elif epoch - last_improve_epoch >= 50 and epoch - last_decay_epoch >= 50: # 50个epoch后无改善，学习率减半
+            new_learning_rate = optimizer.learning_rate * 0.5
+            optimizer.learning_rate.assign(new_learning_rate)
+            print(f"Reduced learning rate to {new_learning_rate.numpy()}.")
+            last_decay_epoch = epoch  # 更新last_decay_epoch
+        
+        if epoch - last_improve_epoch >= 100:
+            print("Early stopping due to no improvement in validation loss.")
+            # Save the final model
+            save_model(model, params, history, option='final')
+            break
 
         # looging and state reset
         logs = 'Epoch={}/{},Loss:{},Metric:[{},{}],Valid_Loss:{},Valid_Metric:[{},{}] | {}'
@@ -252,7 +268,8 @@ def propensity_model_train(params):
              valid_loss.result(), multiclass_valid_metric.result(), binary_valid_metric.result(), params['net_name']))) # train_loss
             tf.print("")
 
-        if epoch%2 == 0:
+        # run parameters optimization, don't save checkpoint
+        if epoch%10 == 0:
             checkpoint.save(checkpoint_prefix)
             
         #self.train_loss.reset_states()
@@ -368,6 +385,8 @@ def predictive_model_train(params):
         }
     min_epochs = 50
     min_loss = tf.constant(np.inf)
+    last_decay_epoch = 0
+    last_improve_epoch = 0
     b_stub_front = False
 
     for epoch in tf.range(1, epochs+1):
@@ -411,9 +430,24 @@ def predictive_model_train(params):
         history['valid_loss'].append(valid_loss.result().numpy())
         history['valid_mse'].append(valid_metric.result().numpy())
 
-        if valid_loss.result().numpy() < min_loss and epoch > min_epochs:
-            min_loss = valid_loss.result().numpy()
+        total_valid_loss = valid_loss.result()
+        # 使用训练集的loss作为优化目标
+        # total_valid_loss = train_loss
+        if total_valid_loss < min_loss and epoch > min_epochs:
+            min_loss = total_valid_loss
+            last_improve_epoch = epoch
             save_model(model, params, history, option='optimal')
+        elif epoch - last_improve_epoch >= 50 and epoch - last_decay_epoch >= 50: # 50个epoch后无改善，学习率减半
+            new_learning_rate = optimizer.learning_rate * 0.5
+            optimizer.learning_rate.assign(new_learning_rate)
+            print(f"Reduced learning rate to {new_learning_rate.numpy()}.")
+            last_decay_epoch = epoch  # 更新last_decay_epoch
+        
+        if epoch - last_improve_epoch >= 100:
+            print("Early stopping due to no improvement in validation loss.")
+            # Save the final model
+            save_model(model, params, history, option='final')
+            break
 
         # looging and state reset
         logs = 'Epoch={}/{},Loss:{},Accuracy:{},Valid Loss:{},Valid Accuracy:{} | {}'
@@ -424,7 +458,7 @@ def predictive_model_train(params):
             (epoch, epochs, train_loss, train_metric.result(),valid_loss.result(),valid_metric.result(), params['net_name']))) # train_loss
             tf.print("")
 
-        if epoch%2 == 0:
+        if epoch%10 == 0:
             checkpoint.save(checkpoint_prefix)
             
         #self.train_loss.reset_states()
@@ -611,6 +645,7 @@ def save_model(model, params, history, option='optimal'): # option: final or opt
     # save model
     serialisation_name = "_".join([str(s) for s in relevant_name_parts])
     serialisation_name = serialisation_name + "_" + option
+    
     model_path = os.path.join(model_folder, serialisation_name)
     model.save(model_path, save_format = 'tf')
     

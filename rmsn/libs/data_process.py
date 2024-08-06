@@ -1,4 +1,4 @@
-'''
+ï»¿'''
 Edited by: Rango
 2024.2.2
 '''
@@ -15,34 +15,34 @@ def discretize_treatment(MODEL_ROOT, treatments, sample_size = 100000):
     continuous_indices = [index for index in range(treatments.shape[2]) if not np.all(np.isin(treatments[:, :, index], [0, 1]))]
 
     if os.path.exists(model_path):
-    # ¼ÓÔØÒÑ´æÔÚµÄÄ£ĞÍ
+    # åŠ è½½å·²å­˜åœ¨çš„æ¨¡å‹
         logging.info("Loading existing discretization model from: %s", model_path)
         discretization_model = load_model(model_path)
     else:
         logging.info("Discretization model not found, creating a new one.")
-        # ³õÊ¼»¯ÀëÉ¢»¯²ã×Öµä£¬ÓÃÓÚ´æ´¢Ã¿¸öÁ¬ĞøÌØÕ÷µÄÀëÉ¢»¯²ã
+        # åˆå§‹åŒ–ç¦»æ•£åŒ–å±‚å­—å…¸ï¼Œç”¨äºå­˜å‚¨æ¯ä¸ªè¿ç»­ç‰¹å¾çš„ç¦»æ•£åŒ–å±‚
         inputs = []
         outputs = []
-        # ÎªÃ¿¸öÁ¬ĞøÌØÕ÷´´½¨²¢ÊÊÅäÀëÉ¢»¯²ã
+        # ä¸ºæ¯ä¸ªè¿ç»­ç‰¹å¾åˆ›å»ºå¹¶é€‚é…ç¦»æ•£åŒ–å±‚
         for index in continuous_indices:
-            # ÌáÈ¡µ±Ç°Á¬ĞøÌØÕ÷
-            continuous_feature = treatments[:, :, index].flatten()  # ½«ÆäÕ¹Æ½ÒÔÊÊÅäDiscretization²ã
+            # æå–å½“å‰è¿ç»­ç‰¹å¾
+            continuous_feature = treatments[:, :, index].flatten()  # å°†å…¶å±•å¹³ä»¥é€‚é…Discretizationå±‚
             if len(continuous_feature) <= sample_size:
                 sampled_feature = continuous_feature
             else:
-                # Ëæ»úÑ¡Ôñsample_size¸öÊı¾İµã½øĞĞ²ÉÑù
+                # éšæœºé€‰æ‹©sample_sizeä¸ªæ•°æ®ç‚¹è¿›è¡Œé‡‡æ ·
                 sampled_indices = np.random.choice(len(continuous_feature), size=sample_size, replace=False)
                 sampled_feature = continuous_feature[sampled_indices]
     
-            # ÎªÃ¿¸öÀëÉ¢»¯²ã´´½¨Ò»¸ö¶ÀÁ¢µÄÊäÈë
+            # ä¸ºæ¯ä¸ªç¦»æ•£åŒ–å±‚åˆ›å»ºä¸€ä¸ªç‹¬ç«‹çš„è¾“å…¥
             input_layer = Input(shape=(1,), dtype=tf.float32)
             inputs.append(input_layer)
 
-            # ´´½¨²¢ÊÊÅäDiscretization²ã
-            discretization_layer = Discretization(num_bins=20)  # ¼ÙÉèÄãÏëÒª·Ö³É20¸öÍ°
-            discretization_layer.adapt(sampled_feature.reshape(-1, 1))  # ĞèÒª¶şÎ¬Êı×é
+            # åˆ›å»ºå¹¶é€‚é…Discretizationå±‚
+            discretization_layer = Discretization(num_bins=20)  # å‡è®¾ä½ æƒ³è¦åˆ†æˆ20ä¸ªæ¡¶
+            discretization_layer.adapt(sampled_feature.reshape(-1, 1))  # éœ€è¦äºŒç»´æ•°ç»„
     
-            # ½«Discretization²ã×÷ÎªÄ£ĞÍµÄÒ»²¿·Ö
+            # å°†Discretizationå±‚ä½œä¸ºæ¨¡å‹çš„ä¸€éƒ¨åˆ†
             output_layer = discretization_layer(input_layer)
             outputs.append(output_layer)
         
@@ -50,14 +50,14 @@ def discretize_treatment(MODEL_ROOT, treatments, sample_size = 100000):
         discretization_model.save(model_path)
         logging.info("Saved discretization model to: %s", model_path)
 
-    # Ó¦ÓÃÀëÉ¢»¯²ãµ½Á¬ĞøÌØÕ÷
+    # åº”ç”¨ç¦»æ•£åŒ–å±‚åˆ°è¿ç»­ç‰¹å¾
     inputs = [treatments[:, :, idx].reshape(-1, 1) for idx in continuous_indices]
     bin_edges = []
     for layer in discretization_model.layers:
         if isinstance(layer, tf.keras.layers.Discretization):
-            # Ö±½Ó·ÃÎÊ bin_boundaries ÊôĞÔ
+            # ç›´æ¥è®¿é—® bin_boundaries å±æ€§
             bin_boundaries = layer.bin_boundaries
-            # ÒòÎª bin_boundaries ÊÇ ListWrapper£¬ÎÒÃÇ½«Æä×ª»»ÎªÁĞ±í£¬È»ºó×ª»»Îª NumPy Êı×é
+            # å› ä¸º bin_boundaries æ˜¯ ListWrapperï¼Œæˆ‘ä»¬å°†å…¶è½¬æ¢ä¸ºåˆ—è¡¨ï¼Œç„¶åè½¬æ¢ä¸º NumPy æ•°ç»„
             bin_boundaries_np = np.array(list(bin_boundaries))
             bin_edges.append(bin_boundaries_np)
 
@@ -188,7 +188,7 @@ def data_generator(dataset_map, batch_size):
         for start_idx in range(0, num_samples, batch_size):
             end_idx = start_idx + batch_size
             
-            # ¸ù¾İµ±Ç°Åú´ÎµÄË÷Òı¹¹½¨key_map
+            # æ ¹æ®å½“å‰æ‰¹æ¬¡çš„ç´¢å¼•æ„å»ºkey_map
             key_map = {
                 'inputs': dataset_map['scaled_inputs'][start_idx:end_idx],
                 'outputs': dataset_map['scaled_outputs'][start_idx:end_idx],
@@ -196,7 +196,7 @@ def data_generator(dataset_map, batch_size):
                 'sequence_lengths': dataset_map['sequence_lengths'][start_idx:end_idx]
             }
 
-            # ¸ù¾İÊı¾İ¼¯ÖĞÊÇ·ñ´æÔÚ¶îÍâµÄ¼üÀ´¶¯Ì¬Ìí¼ÓÕâĞ©¼ü
+            # æ ¹æ®æ•°æ®é›†ä¸­æ˜¯å¦å­˜åœ¨é¢å¤–çš„é”®æ¥åŠ¨æ€æ·»åŠ è¿™äº›é”®
             if 'propensity_weights' in dataset_map:
                 key_map['propensity_weights'] = dataset_map['propensity_weights'][start_idx:end_idx]
 
@@ -245,7 +245,7 @@ def convert_to_tf_dataset_via_generator(dataset_map, batch_size, for_train=True)
         'sequence_lengths': tf.TensorShape([None]),
     }
 
-    # Èç¹û dataset_map °üº¬¶îÍâµÄ¼ü£¬Ò²ĞèÒªÔÚÕâÀïÌí¼Ó
+    # å¦‚æœ dataset_map åŒ…å«é¢å¤–çš„é”®ï¼Œä¹Ÿéœ€è¦åœ¨è¿™é‡Œæ·»åŠ 
     if 'propensity_weights' in dataset_map:
         output_types['propensity_weights'] = tf.float32
         output_shapes['propensity_weights'] = tf.TensorShape([None, dataset_map['propensity_weights'].shape[1], dataset_map['propensity_weights'].shape[-1]])

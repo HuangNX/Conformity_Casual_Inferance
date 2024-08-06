@@ -60,7 +60,7 @@ if __name__ == '__main__':
     # logging.info("Dataset saved")
     
     factor_model_hyperparams_file = '{}/{}_factor_model_best_hyperparams.txt'.format(args.results_dir, args.exp_name)
-    model_prediction_file = '{}/{}_prediction.txt'.format(args.results_dir, args.exp_name)
+    model_prediction_file = '{}/{}_prediction.h5'.format(args.results_dir, args.exp_name)
 
     test_time_series_deconfounder(dataset=dataset, num_substitute_confounders=args.num_substitute_hidden_confounders,
                                   exp_name=args.exp_name,

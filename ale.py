@@ -423,7 +423,7 @@ def _first_order_ale_quant(predictor, train_set, feature, bins):
     return ale, quantiles
 
 
-def _second_order_ale_quant(predictor, train_set, features, bins, compute_time_vary=False):
+def _second_order_ale_quant(predictor, train_set, features, bins, compute_time_vary=False, default_quantiles=None):
     """Estimate the second-order ALE function for two continuous feature data.
 
     Parameters
@@ -470,7 +470,10 @@ def _second_order_ale_quant(predictor, train_set, features, bins, compute_time_v
             # extract a part of code from _first_order_ale_quant and modify##########################
             feature = [feature for feature in features if feature != "week"][0]
             # feature = 'conformity'
-            quantiles, real_bins = _get_quantiles(train_set, feature, bins)
+            if default_quantiles is None:
+                quantiles, real_bins = _get_quantiles(train_set, feature, bins)
+            else:
+                quantiles, real_bins = default_quantiles, len(default_quantiles) - 1
             # adjust week to match index
             #adjusted_weeks_list = [week - 1 for week in sorted(train_set['week'].unique())]
             quantiles_list = tuple(np.append(sorted(train_set['week'].unique()), max(train_set['week'])+1) if f=='week' else quantiles for f in features)
@@ -509,8 +512,8 @@ def _second_order_ale_quant(predictor, train_set, features, bins, compute_time_v
             index_groupby = pd.DataFrame(
                 {"time": train_set["week"].values, "index": indices, "effects": effects}
             ).groupby(["time", "index"])
-            # pd.DataFrame(
-            #     {"time": train_set["week"].values, "index": indices, "predict": predictions[0]}).to_csv("results/predicions.csv",index=False)
+            #pd.DataFrame(
+            #    {"time": train_set["week"].values, "index": indices, "effects": effects}).to_csv("../data/result_data/raw_ale.csv",index=False)
         
         elif "timeline" in features:
             feature = [feature for feature in features if feature != "timeline"][0]
@@ -707,6 +710,7 @@ def _second_order_ale_quant(predictor, train_set, features, bins, compute_time_v
             row_weighted_averages = np.sum(samples_grid * ale, axis=1) / np.sum(samples_grid, axis=1)
             # 从ale的每一行减去相应的加权平均值
             ale -= row_weighted_averages[:, np.newaxis]
+       
         else:
             # "week" 在第二个位置，对行应用 _get_centres
             ale = _get_centres(ale)
@@ -715,6 +719,11 @@ def _second_order_ale_quant(predictor, train_set, features, bins, compute_time_v
             column_weighted_averages = np.sum(samples_grid * ale, axis=0) / np.sum(samples_grid, axis=0)
             # 从ale的每一列减去相应的加权平均值
             ale -= column_weighted_averages
+
+        # 计算整体的加权平均值
+        #total_weighted_average = np.sum(samples_grid * ale) / np.sum(samples_grid)
+        #ale -= total_weighted_average
+        #print(f"ale average = {total_weighted_average}")
     
     else:
         # Compute the cumulative sums.
@@ -818,6 +827,7 @@ def ale_plot(
     monte_carlo=False,
     predictor=None,
     features_classes=None,
+    default_quantiles=None,
     monte_carlo_rep=50,
     monte_carlo_ratio=0.1,
     rugplot_lim=1000,
@@ -920,6 +930,7 @@ def ale_plot(
                 features[0],
                 bins,
             )
+            quantiles_list = quantiles
             _ax_labels(ax, "Feature '{}'".format(features[0]), "")
             _ax_title(
                 ax,
@@ -943,7 +954,8 @@ def ale_plot(
                 train_set,
                 features,
                 bins,
-                compute_time_vary
+                compute_time_vary,
+                default_quantiles,
             )
             _second_order_quant_plot(fig, ax, quantiles_list, ale, compute_time_vary=compute_time_vary)
             if not compute_time_vary:
@@ -974,4 +986,4 @@ def ale_plot(
             )
         )
     #plt.show()
-    return fig, ax, ale
+    return fig, ax, ale, quantiles_list

@@ -1,3 +1,6 @@
+-- 数据生成
+python dataset_process.py --data_path "raw_data/conformity_result1_2019_rango.csv" --save_path "sample_32w_radius_2019.h5" --generate True
+
 python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_10000_gamma_0.6'  --results_dir='results/real_data_results3' --data_filename='data/real_data_sample10000.txt' --num_substitute_hidden_confounders=3
 
 python main_time_series_deconfounder.py --gamma=0.6 --exp_name='sample_10000_gamma_0.6'  --results_dir='results/real_data_results3' --data_filename='results/real_data_results3/sample_10000_gamma_0.6_dataset_with_substitute_confounders.txt' --num_substitute_hidden_confounders=1
@@ -67,3 +70,93 @@ python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data_2020'  
 
 -- 全样本，no deconfounding
 python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data_no_deconfound'  --results_dir='results' --data_filename='../data/sample_32w.h5' --num_substitute_hidden_confounders=1
+
+-- 全样本，no deconfounding，超参数优化
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_params_optimize'  --results_dir='results' --data_filename='../data/sample_32w.h5' --num_substitute_hidden_confounders=1
+
+-- 全样本，no deconfounding，最优参数
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_optimal'  --results_dir='results' --data_filename='../data/sample_32w.h5' --num_substitute_hidden_confounders=1
+
+-- v2
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_optimal_v2'  --results_dir='results' --data_filename='../data/sample_32w.h5' --num_substitute_hidden_confounders=1
+
+-- 全样本，异质性，超参数优化
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='add_model_params_optimize'  --results_dir='results' --data_filename='../data/sample_32w_add.h5' --num_substitute_hidden_confounders=1
+
+-- 全样本，异质性，最优参数
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='add_model_optimal'  --results_dir='results' --data_filename='../data/sample_32w_add.h5' --num_substitute_hidden_confounders=1
+
+-- v2
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='add_model_optimal_v2'  --results_dir='results' --data_filename='../data/sample_32w_add.h5' --num_substitute_hidden_confounders=1
+
+-- 全样本，异质性（只加时空熵），最优参数
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='add_ent_model_optimal'  --results_dir='results' --data_filename='../data/sample_32w_add.h5' --num_substitute_hidden_confounders=1
+
+-- v2
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='add_ent_model_optimal_v2'  --results_dir='results' --data_filename='../data/sample_32w_add.h5' --num_substitute_hidden_confounders=1
+
+-- v3
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='add_ent_model_optimal_v3'  --results_dir='results' --data_filename='../data/sample_32w_add.h5' --num_substitute_hidden_confounders=1
+
+-- 2020年数据跑deconfounder+rmsn
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data_2020_v2'  --results_dir='results' --data_filename='../data/all_data_2020_dataset_with_substitute_confounders.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data_2020'  --results_dir='results' --data_filename='../data/sample_32w_2020.h5' --num_substitute_hidden_confounders=3
+
+-- 3 confounders
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='all_data_2020'  --results_dir='results' --data_filename='results/all_data_2020_dataset_with_substitute_confounders.h5' --num_substitute_hidden_confounders=3
+
+-- 稳健性分析
+-- dist + 750m网格sci
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_sci750'  --results_dir='results' --data_filename='../data/sample_32w_sci750.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_sci750_v2'  --results_dir='results' --data_filename='../data/sample_32w_sci750.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_sci750_v3'  --results_dir='results' --data_filename='../data/sample_32w_sci750.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_sci750_v4'  --results_dir='results' --data_filename='../data/sample_32w_sci750.h5' --num_substitute_hidden_confounders=1
+
+-- 采样训练
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_sci750_sampling'  --results_dir='results' --data_filename='../data/sample_3w2_sci750.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_sci750_sampling_v2'  --results_dir='results' --data_filename='../data/sample_3w2_sci750.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_sci750_sampling_v3'  --results_dir='results' --data_filename='../data/sample_3w2_sci750.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_sci750_sampling_v4'  --results_dir='results' --data_filename='../data/sample_3w2_sci750.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_sci750_sampling_v5'  --results_dir='results' --data_filename='../data/sample_3w2_sci750_random.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_sci750_sampling_v6'  --results_dir='results' --data_filename='../data/sample_3w2_sci750_random.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_sci750_sampling_v7'  --results_dir='results' --data_filename='../data/sample_3w2_sci750_random.h5' --num_substitute_hidden_confounders=1
+
+-- radius + 250m网格sci
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_radius'  --results_dir='results' --data_filename='../data/sample_32w_radius.h5' --num_substitute_hidden_confounders=1
+
+-- 采样训练
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_radius_sampling'  --results_dir='results' --data_filename='../data/sample_3w2_radius.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_radius_sampling_v2'  --results_dir='results' --data_filename='../data/sample_3w2_radius.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_radius_sampling_v3'  --results_dir='results' --data_filename='../data/sample_3w2_radius.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_radius_sampling_v4'  --results_dir='results' --data_filename='../data/sample_3w2_radius.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_radius_sampling_v5'  --results_dir='results' --data_filename='../data/sample_3w2_radius_random.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_radius_sampling_v6'  --results_dir='results' --data_filename='../data/sample_3w2_radius_random.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_radius_sampling_v7'  --results_dir='results' --data_filename='../data/sample_3w2_radius_random.h5' --num_substitute_hidden_confounders=1
+
+-- time + 250m网格sci
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_time'  --results_dir='results' --data_filename='../data/sample_32w_time.h5' --num_substitute_hidden_confounders=1
+
+-- 采样训练
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_time_sampling'  --results_dir='results' --data_filename='../data/sample_3w2_time_random.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_time_sampling_v2'  --results_dir='results' --data_filename='../data/sample_3w2_time_random.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_time_sampling_v3'  --results_dir='results' --data_filename='../data/sample_3w2_time_random.h5' --num_substitute_hidden_confounders=1
+
+python main_time_series_deconfounder.py --gamma=0.6 --exp_name='base_model_time_sampling_v4'  --results_dir='results' --data_filename='../data/sample_3w2_time_random.h5' --num_substitute_hidden_confounders=1
