@@ -1,7 +1,7 @@
 # Conformity in human mobility: COVID-19 enhancing the conformity effect
-### Authors: Ioana Bica, Ahmed M. Alaa, Mihaela van der Schaar
+### Code Authors: Nuoxian Huang 
  
-#### International Conference on Machine Learning (ICML) 2020
+#### Submitted to Nature Human Behavior
 
 Thanks for [the work of Ioana Bica, Ahmed M. Alaa, Mihaela van der Schaar](https://arxiv.org/abs/1902.00450)
 
