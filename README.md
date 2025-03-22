@@ -1,5 +1,5 @@
 # Conformity in human mobility: COVID-19 enhancing the conformity effect
-### Code Authors: Nuoxian Huang 
+### Code Authors: HuangNX
  
 #### Submitted to Nature Human Behavior
 
